@@ -76,25 +76,4 @@ pub mod patterns {
         };
         result
     }
-
-    // create all kmers of length k
-    pub const BASES: &'static [char] = &['A', 'G', 'C', 'T'];
-    // enumerate all kmers
-    // this function will rapidly produce *millions* of values.
-    // limit to 12?
-    pub fn enumerate_mers(length: usize) -> Vec<String> {
-        if length == 1 {
-            BASES.iter().map(|i| i.to_string()).collect()
-        } else if length > 12 {
-            panic!(
-                "Do not set length of kmer higher than 12 as this is  > 16 million comparisons per sequence."
-            );
-        } else {
-            let strings = enumerate_mers(length - 1);
-            BASES
-                .iter()
-                .flat_map(|c| strings.iter().map(move |rest| format!("{}{}", c, rest)))
-                .collect()
-        }
-    }
 }

@@ -1,45 +1,7 @@
 pub mod explore {
-    // I think this is a stupid idea.
-    use crate::patterns::patterns;
-    use crate::utils::utils;
     use bio::io::fasta;
     use clap::value_t;
-    use std::collections::HashMap;
     use std::str;
-
-    // pub fn explore(matches: &clap::ArgMatches) {
-    //     let input_fasta = matches.value_of("fasta").unwrap();
-    //     let length = value_t!(matches.value_of("length"), usize).unwrap_or_else(|e| e.exit());
-
-    //     // read in the fasta from file
-    //     let reader = fasta::Reader::from_file(input_fasta).expect("[-]\tPath invalid.");
-
-    //     let test = patterns::enumerate_mers(length);
-
-    //     for result in reader.records() {
-    //         let record = result.expect("[-]\tError during fasta record parsing.");
-    //         let seq = str::from_utf8(record.seq()).unwrap();
-
-    //         let mut kmer_value: HashMap<&str, usize> = HashMap::new();
-    //         for i in test.iter() {
-    //             let telomeric_repeats = utils::find_motifs(i, seq);
-    //             let mut m: HashMap<i32, usize> = HashMap::new();
-    //             let repeats = utils::longest_repeat(telomeric_repeats);
-    //             for x in repeats {
-    //                 *m.entry(x as i32).or_default() += 1;
-    //             }
-    //             let max = m.get(&(length as i32)).cloned();
-
-    //             kmer_value.insert(&i, max.unwrap_or(0));
-    //         }
-    //         let map = kmer_value
-    //             .iter()
-    //             .max_by(|a, b| a.1.cmp(&b.1))
-    //             .map(|(k, v)| (k, v));
-
-    //         println!("{:?}", map);
-    //     }
-    // }
 
     // maybe a better idea to split the fasta sequence into chunks
     // while the ith and i + 1 chunk are the same, push tuple to a vector
@@ -62,16 +24,24 @@ pub mod explore {
             let chunks = record.seq().chunks(length);
             let chunks_plus_one = record.seq()[length..record.seq().len()].chunks(length);
 
-            // now we have consecutive records a and b
+            // store the index positions and adjacent equivalent sequences.
             let mut indexes = Vec::new();
+            // need this otherwise we lose the position in the sequence.
+            // need to check this is actually correct.
+            let mut pos = 1;
+
+            // this is the heavy lifting.
             for (i, (a, b)) in chunks.zip(chunks_plus_one).enumerate() {
                 // if chunk contains N, skip.
                 if a.contains(&78) || b.contains(&78) {
+                    pos += length;
                     continue;
                 } else if a == b {
-                    indexes.push((i, str::from_utf8(a).unwrap()));
+                    indexes.push((pos, str::from_utf8(a).unwrap()));
                 }
+                pos += length;
             }
+
             let mut adjacent_indexes = Vec::new();
             for i in 1..indexes.len() {
                 if i + 1 < indexes.len() {
@@ -81,9 +51,40 @@ pub mod explore {
                         indexes[i].1,
                     ))
                 }
+                pos += length;
             }
-            for i in adjacent_indexes.into_iter() {
-                println!("{:?}", i);
+
+            // collect all of this vector into a nice format to print for the moment.
+            // iteration
+            let mut it = 1;
+            let mut count = 0;
+            // threshold
+            let threshold = 10;
+            let mut start_pos = 1;
+            let mut start;
+            let mut end;
+
+            loop {
+                start = adjacent_indexes[start_pos].0;
+                if it == adjacent_indexes.len() - 1 {
+                    break;
+                }
+                if adjacent_indexes[it].1 == length {
+                    count += 1;
+                    it += 1;
+                } else {
+                    end = adjacent_indexes[it].0;
+                    if count > threshold {
+                        println!(
+                            "{:?} - {:?}: {:?} x repeat sequence: {:?}",
+                            start, end, count, adjacent_indexes[it].2
+                        );
+                    }
+
+                    start_pos = it;
+                    count = 1;
+                    it += 1;
+                }
             }
         }
     }

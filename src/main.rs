@@ -34,6 +34,7 @@ fn main() {
         )
         .subcommand(
             clap::SubCommand::with_name("explore")
+                // change this about.
                 .about("Use an exhaustive search of all substrings of length k to query a genome for a telomere sequence. Slow.")
                 .arg(
                     Arg::with_name("fasta")
@@ -43,12 +44,14 @@ fn main() {
                         .required(true)
                         .help("The input fasta file."),
                 )
+                // maybe we can have default as 6-8?
                 .arg(
                     Arg::with_name("length")
                         .short("l")
                         .long("length")
                         .takes_value(true)
                         .required(true)
+                        // change this help
                         .help("Length of substring for exhaustive search. Limited to 12."),
                 )
         )
