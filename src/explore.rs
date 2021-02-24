@@ -4,7 +4,7 @@ pub mod explore {
     use clap::value_t;
     use std::str;
 
-    // maybe a better idea to split the fasta sequence into chunks
+    // split the fasta sequence into chunks
     // while the ith and i + 1 chunk are the same, push tuple to a vector
     // if this count is less than x discard
 
@@ -13,6 +13,8 @@ pub mod explore {
     // then consecutive sequences can be counted at their index position
     // do we want a threshold? 5?
     // 200 - 235: 5 x repeat sequence AAATTAA
+
+    // How to get it to spit out most likely sequence?
 
     pub fn explore(matches: &clap::ArgMatches) {
         let input_fasta = matches.value_of("fasta").unwrap();
@@ -27,13 +29,7 @@ pub mod explore {
             let indexes = chunk_fasta(record, length);
             let adjacents = calculate_indexes(indexes);
             let formatted = generate_explore_data(adjacents, length);
-
-            for result in formatted {
-                println!(
-                    "Chromosome {}: {:?} - {:?}: {:?} x repeat sequence: {:?}",
-                    id, result.start, result.end, result.count, result.sequence
-                );
-            }
+            merge_rotated_repeats(formatted, id);
         }
     }
 
@@ -77,6 +73,7 @@ pub mod explore {
         adjacent_indexes
     }
 
+    #[derive(Debug)]
     pub struct TelomericRepeatExplore {
         pub start: usize,
         pub end: usize,
@@ -88,13 +85,19 @@ pub mod explore {
         adjacent_indexes: Vec<(usize, usize, String)>,
         chunk_length: usize,
     ) -> Vec<TelomericRepeatExplore> {
+        if adjacent_indexes.is_empty() {
+            panic!(
+                "No consecutive repeats (at least two) of length {} were identified.",
+                chunk_length
+            );
+        }
         // collect all of this vector into a nice format to print for the moment.
         // iteration
-        let mut it = 1;
+        let mut it = 0;
         let mut count = 0;
         // threshold could become an input parameter
         let threshold = 10;
-        let mut start_pos = 1;
+        let mut start_pos = 0;
         let mut start;
         let mut end;
         let mut potential_telomeric_repeats = Vec::new();
@@ -104,9 +107,7 @@ pub mod explore {
             if it == adjacent_indexes.len() - 1 {
                 break;
             }
-            if adjacent_indexes[it].1 == chunk_length
-            //&& utils::string_rotation(adjacent_indexes[it].2, adjacent_indexes[it - 1].2)
-            {
+            if adjacent_indexes[it].1 == chunk_length {
                 count += 1;
                 it += 1;
             } else {
@@ -129,31 +130,43 @@ pub mod explore {
     }
 
     // bit experimental, not sure it totally works...
-    // fn merge_rotated_repeats(data: Vec<(usize, usize, i32, std::string::String)>) {
-    //     let mut it = 1;
-    //     let mut start_pos = 1;
-    //     let mut start;
-    //     let mut count = 0;
-    //     let mut end;
+    fn merge_rotated_repeats(data: Vec<TelomericRepeatExplore>, id: String) {
+        let mut it = 0;
+        let mut count = data[0].count;
+        let mut start_index = 0;
+        let mut start;
+        let mut end;
 
-    //     loop {
-    //         start = data[start_pos].0;
-    //         if it == data.len() - 2 {
-    //             break;
-    //         }
-    //         // if adjacent sequences are rotations
-    //         if utils::string_rotation(&data[it].3, &data[it + 1].3) {
-    //             count += data[it].2;
-    //             it += 1;
-    //         } else {
-    //             end = data[it].0;
-    //             if count > 0 {
-    //                 println!("{:?}, {:?}, {:?}, {:?}", start, end, count, &data[it].3);
-    //             }
-    //             count = 0;
-    //         }
-    //         start_pos = it;
-    //         it += 1;
-    //     }
-    // }
+        loop {
+            // the starting value for the first result
+            start = data[start_index].start;
+            end = data[it].end;
+            // explicit break in the loop
+            if it == data.len() - 1 {
+                // if all telomere repeat to the end, this is not printed.
+                println!(
+                    "Chromosome {:?}. Position {:?} - {:?}, {:?} x repeats of sequence: {:?}",
+                    id, start, end, count, data[it].sequence
+                );
+                break;
+            }
+            // if consecutive sequences are rotations
+            if utils::string_rotation(&data[it].sequence, &data[it + 1].sequence) {
+                // increment count by number of counts in next iteration
+                count += data[it + 1].count;
+                it += 1;
+            } else {
+                end = data[it].end;
+                if count > 0 {
+                    println!(
+                        "Chromosome {:?}. Position {:?} - {:?}, {:?} x repeats of sequence: {:?}",
+                        id, start, end, count, data[it].sequence
+                    );
+                }
+                it += 1;
+                start_index = it;
+                count = 0;
+            }
+        }
+    }
 }

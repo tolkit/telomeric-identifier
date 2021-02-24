@@ -34,8 +34,7 @@ fn main() {
         )
         .subcommand(
             clap::SubCommand::with_name("explore")
-                // change this about.
-                .about("Use an exhaustive search of all substrings of length k to query a genome for a telomere sequence. Slow.")
+                .about("Use a search of all substrings of length k to query a genome for a telomere sequence.")
                 .arg(
                     Arg::with_name("fasta")
                         .short("f")
@@ -51,8 +50,7 @@ fn main() {
                         .long("length")
                         .takes_value(true)
                         .required(true)
-                        // change this help
-                        .help("Length of substring for exhaustive search. Limited to 12."),
+                        .help("Length of substring."),
                 )
         )
         .subcommand(

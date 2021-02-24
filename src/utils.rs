@@ -1,13 +1,24 @@
 pub mod utils {
-    use bio::pattern_matching::shift_and;
+    use bio::pattern_matching::bom::BOM;
+    use bio::pattern_matching::shift_and::ShiftAnd;
+
+    #[derive(Debug)]
     pub struct Motifs {
         pub indexes: Vec<usize>,
         pub length: usize,
     }
 
     pub fn find_motifs(motif: &str, string: &str) -> Motifs {
-        let matcher = shift_and::ShiftAnd::new(motif.as_bytes());
-        let matches = &matcher.find_all(string.as_bytes()).collect::<Vec<usize>>();
+        let motif_length = motif.len();
+        let matches: Vec<usize>;
+
+        if motif_length < 65 {
+            let matcher = ShiftAnd::new(motif.as_bytes());
+            matches = matcher.find_all(string.as_bytes()).collect::<Vec<usize>>();
+        } else {
+            let matcher = BOM::new(motif.as_bytes());
+            matches = matcher.find_all(string.as_bytes()).collect::<Vec<usize>>();
+        }
 
         Motifs {
             indexes: matches.to_owned(),
@@ -50,23 +61,12 @@ pub mod utils {
     // see https://github.com/sebinsua/cracking-the-coding-interview/blob/9aed47bddaa0adbc527b650b8f28d0c751ce82e8/arrays-and-strings/src/string_rotation.rs
     // when there is an error/snp in the telomeric sequence, it causes a shift in the
     // repeat that is returned in 'explore' subcommand. Perhaps this info can be leveraged? Help.
-    pub fn string_rotation(string1: &str, string2: &str) -> bool {
-        if string1.len() != string2.len() {
-            return false;
+    pub fn string_rotation(s1: &str, s2: &str) -> bool {
+        if s1.len() == s2.len() {
+            let mut s2 = s2.to_string();
+            s2.push_str(&s2.clone());
+            return s2.contains(&s1);
         }
-
-        let first_character = string2.chars().nth(0).unwrap_or('\0');
-        let rotation_idx = match string1.find(|chr| chr == first_character) {
-            Some(idx) => idx,
-            None => return false,
-        };
-
-        let rotated_string = format!("{}{}", &string1[rotation_idx..], &string1[..rotation_idx]);
-
-        if string2.contains(&rotated_string) {
-            return true;
-        }
-
         false
     }
 }
