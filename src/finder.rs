@@ -14,6 +14,6 @@ pub mod finder {
 
         let reader = fasta::Reader::from_file(input_fasta).expect("[-]\tPath invalid.");
         // do stuff...
-        println!("{:?}", capture.seq);
+        println!("Nothing implemented yet {:?}", capture.seq);
     }
 }

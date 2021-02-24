@@ -45,4 +45,28 @@ pub mod utils {
             _ => 'N',
         }
     }
+
+    // &str manipulation / rotation
+    // see https://github.com/sebinsua/cracking-the-coding-interview/blob/9aed47bddaa0adbc527b650b8f28d0c751ce82e8/arrays-and-strings/src/string_rotation.rs
+    // when there is an error/snp in the telomeric sequence, it causes a shift in the
+    // repeat that is returned in 'explore' subcommand. Perhaps this info can be leveraged? Help.
+    pub fn string_rotation(string1: &str, string2: &str) -> bool {
+        if string1.len() != string2.len() {
+            return false;
+        }
+
+        let first_character = string2.chars().nth(0).unwrap_or('\0');
+        let rotation_idx = match string1.find(|chr| chr == first_character) {
+            Some(idx) => idx,
+            None => return false,
+        };
+
+        let rotated_string = format!("{}{}", &string1[rotation_idx..], &string1[..rotation_idx]);
+
+        if string2.contains(&rotated_string) {
+            return true;
+        }
+
+        false
+    }
 }
