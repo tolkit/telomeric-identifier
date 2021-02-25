@@ -100,7 +100,7 @@ fn main() {
             search::search(matches);
         }
         _ => {
-            println!("Subcommand invalid, run with '--help' for help. Exiting.");
+            println!("Subcommand invalid, run with '--help' for subcommand options. Exiting.");
             process::exit(1);
         }
     }

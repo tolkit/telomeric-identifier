@@ -6,8 +6,8 @@ Motivated by this interesting bioinfomatic problem at the moment. In active deve
 
 ## To-do's
 
-- what output format is most useful?
-- 
+- What output format is most useful? CSV?
+- Window approach for the find/search subcommands?
 
 ## Usage
 

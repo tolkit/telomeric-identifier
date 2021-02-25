@@ -2,6 +2,9 @@ pub mod explore {
     use crate::utils::utils;
     use bio::io::fasta;
     use clap::value_t;
+    use std::fs::{create_dir_all, File};
+    use std::io::prelude::*;
+    use std::io::LineWriter;
     use std::str;
 
     // split the fasta sequence into chunks
@@ -21,12 +24,31 @@ pub mod explore {
     // TODO: error handling is a bit crappy at the moment, fix this.
 
     pub fn explore(matches: &clap::ArgMatches) {
+        // parse arguments from main
         let input_fasta = matches.value_of("fasta").unwrap();
         let length = value_t!(matches.value_of("length"), usize).unwrap_or_else(|e| e.exit());
         let threshold = value_t!(matches.value_of("threshold"), i32).unwrap_or_else(|e| e.exit());
 
+        // make the reader object
         let reader = fasta::Reader::from_file(input_fasta).expect("[-]\tPath invalid.");
 
+        // create directory for output
+        if let Err(e) = create_dir_all("./explore/") {
+            println!("[-]\tCreate directory error: {}", e.to_string());
+        }
+
+        // create file
+        let explore_file = File::create("./explore/telomeric_locations.csv").unwrap();
+        let mut explore_file = LineWriter::new(explore_file);
+
+        // add headers
+        writeln!(
+            explore_file,
+            "ID,start_pos,end_pos,repeat_numer,repeat_sequence"
+        )
+        .unwrap_or_else(|_| println!("[-]\tError in writing to file."));
+
+        // iterate over the fasta records
         for result in reader.records() {
             let record = result.expect("[-]\tError during fasta record parsing.");
             let id = record.id().to_owned();
@@ -34,7 +56,13 @@ pub mod explore {
             let indexes = chunk_fasta(record, length);
             let adjacents = calculate_indexes(indexes);
             let formatted = generate_explore_data(adjacents, id.clone(), length);
-            merge_rotated_repeats(formatted.unwrap_or(vec![]), length, id, threshold);
+            merge_rotated_repeats(
+                formatted.unwrap_or(vec![]),
+                length,
+                id,
+                threshold,
+                &mut explore_file,
+            );
         }
     }
 
@@ -51,7 +79,7 @@ pub mod explore {
         let mut indexes = Vec::new();
         // need this otherwise we lose the position in the sequence.
         // need to check this is actually correct.
-        let mut pos = 1;
+        let mut pos = 0;
 
         // this is the heavy lifting.
         for (_i, (a, b)) in chunks.zip(chunks_plus_one).enumerate() {
@@ -103,7 +131,7 @@ pub mod explore {
     ) -> Option<Vec<TelomericRepeatExplore>> {
         if adjacent_indexes.is_empty() {
             println!(
-                "Chromosome {}: No consecutive repeats of length {} were identified.",
+                "[-]\tChromosome {}: No consecutive repeats of length {} were identified.",
                 id, chunk_length
             );
             return None;
@@ -116,7 +144,7 @@ pub mod explore {
         // this is the first level of filtering which is useful
         // as most matches only occur twice (once repeated)
         // this local threshold parameter is quite interesting, too low and you get too much
-        // output, but too high and you miss information... 3 seems a happy medium
+        // output, but too high and you miss information.
         let local_threshold = 0;
         let mut start_pos = 0;
         let mut start;
@@ -157,19 +185,21 @@ pub mod explore {
     // TODO: can the sequences be summarised? I.e. ID reverse complement sets.
     // what data structure should be returned?
 
-    fn merge_rotated_repeats(
+    fn merge_rotated_repeats<T: std::io::Write>(
         data: Vec<TelomericRepeatExplore>,
         chunk_length: usize,
         id: String,
         threshold: i32,
+        file: &mut LineWriter<T>,
     ) -> Option<i32> {
         if data.is_empty() {
             println!(
-                "Chromosome {}: No consecutive repeats of length {} were identified.",
+                "[-]\tChromosome {}: No consecutive repeats of length {} were identified.",
                 id, chunk_length
             );
             return None;
         }
+
         let mut it = 0;
         let mut count = data[0].count;
         let mut start_index = 0;
@@ -184,14 +214,15 @@ pub mod explore {
             if it == data.len() - 1 {
                 // if all telomere repeat to the end, this is not printed.
                 if count > threshold {
-                    println!(
-                        "Chromosome {}: Position {} - {}, {} x repeats of sequence: {}",
+                    writeln!(
+                        file,
+                        "{},{},{},{},{}",
                         id, start, end, count, data[it].sequence
-                    );
+                    )
+                    .unwrap_or_else(|_| println!("[-]\tError in writing to file."));
                 }
                 // this seems weird, fix this?
-                // Or will it be fixed when things get written to file...
-                break Some(1);
+                break Some(0);
             }
             // if consecutive sequences are rotations
             if utils::string_rotation(&data[it].sequence, &data[it + 1].sequence) {
@@ -201,10 +232,12 @@ pub mod explore {
             } else {
                 end = data[it].end;
                 if count > threshold {
-                    println!(
-                        "Chromosome {}: Position {} - {}, {} x repeats of sequence: {}",
+                    writeln!(
+                        file,
+                        "{},{},{},{},{}",
                         id, start, end, count, data[it].sequence
-                    );
+                    )
+                    .unwrap_or_else(|_| println!("[-]\tError in writing to file."));
                 }
                 it += 1;
                 start_index = it;
