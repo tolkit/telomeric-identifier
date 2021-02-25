@@ -52,6 +52,15 @@ fn main() {
                         .required(true)
                         .help("Length of substring."),
                 )
+                .arg(
+                    Arg::with_name("threshold")
+                        .short("t")
+                        .long("threshold")
+                        .takes_value(true)
+                        .required(false)
+                        .default_value("100")
+                        .help("Positions of repeats are only reported if they occur sequentially in a greater number than the threshold."),
+                )
         )
         .subcommand(
             clap::SubCommand::with_name("search")
@@ -91,7 +100,7 @@ fn main() {
             search::search(matches);
         }
         _ => {
-            println!("Invalid operation provided, run with '--help' for help. Exiting.");
+            println!("Subcommand invalid, run with '--help' for help. Exiting.");
             process::exit(1);
         }
     }

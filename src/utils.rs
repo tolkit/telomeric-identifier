@@ -57,10 +57,10 @@ pub mod utils {
         }
     }
 
-    // &str manipulation / rotation
-    // see https://github.com/sebinsua/cracking-the-coding-interview/blob/9aed47bddaa0adbc527b650b8f28d0c751ce82e8/arrays-and-strings/src/string_rotation.rs
+    // &str rotation
+    // see https://github.com/rrbonham96/rust-ctci/blob/a2540532b098a06c29f2a5f06f54fc5717fd7669/src/arrays_and_strings/is_rotation.rs
     // when there is an error/snp in the telomeric sequence, it causes a shift in the
-    // repeat that is returned in 'explore' subcommand. Perhaps this info can be leveraged? Help.
+    // repeat that is returned in 'explore' subcommand. Perhaps this info can be leveraged to count consecutive sequences...
     pub fn string_rotation(s1: &str, s2: &str) -> bool {
         if s1.len() == s2.len() {
             let mut s2 = s2.to_string();

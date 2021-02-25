@@ -4,6 +4,11 @@
 
 Motivated by this interesting bioinfomatic problem at the moment. In active development, so not a lot to see yet. It aims however, to be simple and fast. 
 
+## To-do's
+
+- what output format is most useful?
+- 
+
 ## Usage
 
 There are three submodules. It takes an input fasta assembly, along with one other argument (so far) depending on the subcommand.
