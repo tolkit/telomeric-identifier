@@ -14,7 +14,7 @@ Motivated by this interesting bioinfomatic problem at the moment. In active deve
 There are three submodules. It takes an input fasta assembly, along with one other argument (so far) depending on the subcommand.
 
 ```
-TIDK 0.1.0
+TIDK 0.1.1
 Max Brown <mb39@sanger.ac.uk>
 A Telomere Identification Toolkit.
 

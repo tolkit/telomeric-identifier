@@ -7,4 +7,4 @@ edition = "2018"
 [dependencies]
 bio = "*"
 rust-htslib = { version = "*", default-features = false }
-clap = "~2.27.0"
+clap = "~2.33.0"

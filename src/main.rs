@@ -13,13 +13,13 @@ fn main() {
         .about("A Telomere Identification Toolkit.")
         .subcommand(
             clap::SubCommand::with_name("find")
-                .about("Supply a DNA string or flag the clade your organsim belongs to.")
+                .about("Supply the name of a clade your organsim belongs to.")
                 .arg(
                     Arg::with_name("fasta")
                         .short("f")
                         .long("fasta")
                         .takes_value(true)
-                        .required(true)
+                        .required_unless("print")
                         .help("The input fasta file."),
                 )
                 .arg(
@@ -27,9 +27,15 @@ fn main() {
                         .short("c")
                         .long("clade")
                         .takes_value(true)
-                        .required(true)
+                        .required_unless("print")
                         .possible_values(&["vertebrate", "ascidian", "echinodermata", "mollusca", "coleoptera", "hymenoptera", "lepidoptera", "megaloptera", "trichoptera", "neuroptera", "blattodea", "orthoptera", "nematoda", "amoeba", "plants", "ciliates"])
                         .help("The clade of organism to identify telomeres in."),
+                )
+                .arg(
+                    Arg::with_name("print")
+                        .short("p")
+                        .long("print")
+                        .help("Print a table of clades, along with their telomeric sequences."),
                 )
         )
         .subcommand(
