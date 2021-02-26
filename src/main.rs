@@ -2,9 +2,10 @@
 
 use clap::{App, Arg};
 use std::process;
-use telomeric_identifier::explore::explore;
-use telomeric_identifier::finder::finder;
-use telomeric_identifier::search::search;
+use tidk::clades::clades::CLADES;
+use tidk::explore::explore;
+use tidk::finder::finder;
+use tidk::search::search;
 
 fn main() {
     let matches = App::new("TIDK")
@@ -23,13 +24,31 @@ fn main() {
                         .help("The input fasta file."),
                 )
                 .arg(
+                    Arg::with_name("window")
+                        .short("w")
+                        .long("window")
+                        .takes_value(true)
+                        .required_unless("print")
+                        .default_value("10000")
+                        .help("Window size to calculate telomeric repeat counts in."),
+                )
+                .arg(
                     Arg::with_name("clade")
                         .short("c")
                         .long("clade")
                         .takes_value(true)
                         .required_unless("print")
-                        .possible_values(&["vertebrate", "ascidian", "echinodermata", "mollusca", "coleoptera", "hymenoptera", "lepidoptera", "megaloptera", "trichoptera", "neuroptera", "blattodea", "orthoptera", "nematoda", "amoeba", "plants", "ciliates"])
+                        .possible_values(CLADES)
                         .help("The clade of organism to identify telomeres in."),
+                )
+                .arg(
+                    Arg::with_name("output")
+                        .short("o")
+                        .long("output")
+                        .takes_value(true)
+                        .required_unless("print")
+                        .default_value("tidk-find")
+                        .help("Output filename for the CSVs (without extension)."),
                 )
                 .arg(
                     Arg::with_name("print")
@@ -67,6 +86,15 @@ fn main() {
                         .default_value("100")
                         .help("Positions of repeats are only reported if they occur sequentially in a greater number than the threshold."),
                 )
+                .arg(
+                    Arg::with_name("output")
+                        .short("o")
+                        .long("output")
+                        .takes_value(true)
+                        .required(false)
+                        .default_value("tidk-explore")
+                        .help("Output filename for the CSVs (without extension)."),
+                )
         )
         .subcommand(
             clap::SubCommand::with_name("search")
@@ -90,7 +118,7 @@ fn main() {
         )
         .get_matches();
 
-    // parse command line options
+    // feed command line options to each main function
     let subcommand = matches.subcommand();
     match subcommand.0 {
         "find" => {

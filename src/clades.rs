@@ -21,6 +21,7 @@ pub mod clades {
     ];
 
     // all because there might be multiple telomere sequences...
+    #[derive(Debug, Clone)]
     pub struct TelomereSeq<'a> {
         pub clade: &'a str,
         pub seq: Box<&'a [&'a str]>,
@@ -114,6 +115,7 @@ pub mod clades {
         result
     }
 
+    // 'pretty' print a simplified table from the telomerase sequence database.
     pub fn print_table() {
         let clades = CLADES;
 

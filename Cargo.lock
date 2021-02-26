@@ -862,15 +862,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "telomeric-identifier"
-version = "0.1.1"
-dependencies = [
- "bio",
- "clap",
- "rust-htslib",
-]
-
-[[package]]
 name = "textwrap"
 version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -906,6 +897,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8018d24e04c95ac8790716a5987d0fec4f8b27249ffa0f7d33f1369bdfb88cbd"
 dependencies = [
  "once_cell",
+]
+
+[[package]]
+name = "tidk"
+version = "0.1.2"
+dependencies = [
+ "bio",
+ "clap",
+ "rust-htslib",
 ]
 
 [[package]]

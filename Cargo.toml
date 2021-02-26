@@ -1,6 +1,6 @@
 [package]
-name = "telomeric-identifier"
-version = "0.1.1"
+name = "tidk"
+version = "0.1.2"
 authors = ["Max Brown <mb39@sanger.ac.uk>"]
 edition = "2018"
 

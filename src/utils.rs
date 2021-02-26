@@ -1,6 +1,6 @@
 pub mod utils {
     use bio::pattern_matching::bom::BOM;
-    use bio::pattern_matching::shift_and::ShiftAnd;
+    use bio::pattern_matching::kmp::KMP;
 
     #[derive(Debug)]
     pub struct Motifs {
@@ -13,7 +13,7 @@ pub mod utils {
         let matches: Vec<usize>;
 
         if motif_length < 65 {
-            let matcher = ShiftAnd::new(motif.as_bytes());
+            let matcher = KMP::new(motif.as_bytes());
             matches = matcher.find_all(string.as_bytes()).collect::<Vec<usize>>();
         } else {
             let matcher = BOM::new(motif.as_bytes());
@@ -25,6 +25,8 @@ pub mod utils {
             length: matches.len(),
         }
     }
+
+    // not sure this is needed.
     pub fn longest_repeat(indexes: Motifs) -> Vec<usize> {
         let mut res = Vec::new();
         for index in 1..indexes.length {
@@ -55,6 +57,25 @@ pub mod utils {
             'N' => 'N',
             _ => 'N',
         }
+    }
+
+    pub fn remove_overlapping_indexes(indexes: Motifs, pattern_length: usize) -> Vec<usize> {
+        let mut indexes = indexes.indexes;
+        let mut index = 0;
+        let mut vec_len;
+
+        loop {
+            vec_len = indexes.len();
+
+            if indexes.is_empty() || index == 0 || index == vec_len - 1 {
+                break;
+            }
+            while indexes[index + 1] < indexes[index] + pattern_length {
+                indexes.remove(index + 1);
+                index += 1;
+            }
+        }
+        indexes
     }
 
     // &str rotation

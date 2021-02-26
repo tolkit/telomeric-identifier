@@ -28,6 +28,7 @@ pub mod explore {
         let input_fasta = matches.value_of("fasta").unwrap();
         let length = value_t!(matches.value_of("length"), usize).unwrap_or_else(|e| e.exit());
         let threshold = value_t!(matches.value_of("threshold"), i32).unwrap_or_else(|e| e.exit());
+        let output = matches.value_of("output").unwrap();
 
         // make the reader object
         let reader = fasta::Reader::from_file(input_fasta).expect("[-]\tPath invalid.");
@@ -38,13 +39,14 @@ pub mod explore {
         }
 
         // create file
-        let explore_file = File::create("./explore/telomeric_locations.csv").unwrap();
+        let file_name = format!("./explore/{}{}", output, "telomeric_locations.csv");
+        let explore_file = File::create(&file_name).unwrap();
         let mut explore_file = LineWriter::new(explore_file);
 
         // add headers
         writeln!(
             explore_file,
-            "ID,start_pos,end_pos,repeat_numer,repeat_sequence"
+            "ID,start_pos,end_pos,repeat_number,repeat_sequence"
         )
         .unwrap_or_else(|_| println!("[-]\tError in writing to file."));
 
