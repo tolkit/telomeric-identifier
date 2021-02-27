@@ -67,6 +67,7 @@ pub mod utils {
         loop {
             vec_len = indexes.len();
 
+            // this bool probably needs editing.
             if indexes.is_empty() || index == 0 || index == vec_len - 1 {
                 break;
             }

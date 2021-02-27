@@ -1,4 +1,4 @@
-# Identify telomeric repeats
+# A Telomere Identification toolKit (tidk)
 
 ## Aims
 
@@ -33,7 +33,7 @@ SUBCOMMANDS:
     search     Search the input genome with a specific telomeric repeat search string.
 ```
 
-`telomeric-identifier explore` will identify all sequences of length k, which repeat at least twice throughout a genome. Repeats of high number toward the beginning or end of sequences are likely candidates for telomeric repeats. Prototype code done.
+`tidk explore` will identify all sequences of length k, which repeat at least twice throughout a genome. Repeats of high number toward the beginning or end of sequences are likely candidates for telomeric repeats. Prototype code done.
 
 ```
 tidk-explore
@@ -53,7 +53,7 @@ OPTIONS:
     -t, --threshold <threshold>    Positions of repeats are only reported if they occur sequentially in a greater number than the threshold. [default: 100]
 ```
 
-`telomeric-identifier find` will take an input clade, and match the known telomeric repeat for that clade (or repeats plural) and search the genome. Not yet done. Uses the telomeric repeat database -> http://telomerase.asu.edu/sequences_telomere.html.
+`tidk find` will take an input clade, and match the known telomeric repeat for that clade (or repeats plural) and search the genome. Uses the <a href="http://telomerase.asu.edu/sequences_telomere.html">telomeric repeat database</a>. Prototype code done.
 
 ```
 tidk-find
@@ -76,7 +76,7 @@ OPTIONS:
     -w, --window <window>    Window size to calculate telomeric repeat counts in. [default: 10000]
 ```
 
-`telomeric-identifier search` will search the genome for an input string. If you know the telomeric repeat of your sequenced organism, this will hopefully find it. Protoype code done but needs much tidying.
+`tidk search` will search the genome for an input string. If you know the telomeric repeat of your sequenced organism, this will hopefully find it. Protoype code done.
 
 ```
 tidk-search
@@ -93,3 +93,9 @@ OPTIONS:
     -f, --fasta <fasta>      The input fasta file.
     -s, --string <string>    Supply a DNA string to query the genome with.
 ```
+
+## TODO's
+
+- Implement IUPAC in `tidk search`?
+- Better summary of `tidk explore`?
+- Should `tidk explore` do multiple string length searches by default? As most telomeric repeat sequence units are only 6-8 nucleotides long.

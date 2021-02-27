@@ -115,6 +115,24 @@ fn main() {
                         .required(true)
                         .help("Supply a DNA string to query the genome with."),
                 )
+                .arg(
+                    Arg::with_name("window")
+                        .short("w")
+                        .long("window")
+                        .takes_value(true)
+                        .required_unless("print")
+                        .default_value("10000")
+                        .help("Window size to calculate telomeric repeat counts in."),
+                )
+                .arg(
+                    Arg::with_name("output")
+                        .short("o")
+                        .long("output")
+                        .takes_value(true)
+                        .required_unless("print")
+                        .default_value("tidk-find")
+                        .help("Output filename for the CSVs (without extension)."),
+                )
         )
         .get_matches();
 

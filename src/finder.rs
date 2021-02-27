@@ -4,8 +4,8 @@ pub mod finder {
     use bio::io::fasta;
     use clap::value_t;
     use std::fs::{create_dir_all, File};
-    use std::io::prelude::*;
     use std::io::LineWriter;
+    use std::io::Write;
     use std::process;
     use std::str;
 
@@ -63,7 +63,7 @@ pub mod finder {
     }
 
     // write windows to file
-    fn write_window_counts<T: std::io::Write>(
+    fn write_window_counts<T: Write>(
         sequence: bio::io::fasta::Record,
         file: &mut LineWriter<T>,
         clade_info: clades::TelomereSeq,
