@@ -72,7 +72,12 @@ pub mod explore {
     // compare consecutive iterations of these chunks and decide if they are equal
     // record the position of the repeat and the sequence.
 
-    fn chunk_fasta(sequence: bio::io::fasta::Record, chunk_length: usize) -> Vec<(usize, String)> {
+    pub struct ChunkedFasta {
+        pub position: usize,
+        pub sequence: String,
+    }
+
+    fn chunk_fasta(sequence: bio::io::fasta::Record, chunk_length: usize) -> Vec<ChunkedFasta> {
         let chunks = sequence.seq().chunks(chunk_length);
         let chunks_plus_one =
             sequence.seq()[chunk_length..sequence.seq().len()].chunks(chunk_length);
@@ -90,7 +95,10 @@ pub mod explore {
                 pos += chunk_length;
                 continue;
             } else if a == b {
-                indexes.push((pos, str::from_utf8(a).unwrap().to_owned()));
+                indexes.push(ChunkedFasta {
+                    position: pos,
+                    sequence: str::from_utf8(a).unwrap().to_owned(),
+                });
             }
             pos += chunk_length;
         }
@@ -100,15 +108,21 @@ pub mod explore {
     // takes the positions from chunk_fasta
     // take the current iteration position away from next iteration position
 
-    fn calculate_indexes(indexes: Vec<(usize, String)>) -> Vec<(usize, usize, String)> {
+    pub struct RepeatRuns {
+        pub position: usize,
+        pub subtracted_position: usize,
+        pub sequence: String,
+    }
+
+    fn calculate_indexes(indexes: Vec<ChunkedFasta>) -> Vec<RepeatRuns> {
         let mut adjacent_indexes = Vec::new();
         for i in 1..indexes.len() {
             if i + 1 < indexes.len() {
-                adjacent_indexes.push((
-                    indexes[i].0,
-                    indexes[i + 1].0 - indexes[i].0,
-                    indexes[i].1.clone(),
-                ))
+                adjacent_indexes.push(RepeatRuns {
+                    position: indexes[i].position,
+                    subtracted_position: indexes[i + 1].position - indexes[i].position,
+                    sequence: indexes[i].sequence.clone(),
+                })
             }
         }
         adjacent_indexes
@@ -127,7 +141,7 @@ pub mod explore {
     // these are the repeats we are looking for.
 
     fn generate_explore_data(
-        adjacent_indexes: Vec<(usize, usize, String)>,
+        adjacent_indexes: Vec<RepeatRuns>,
         id: String,
         chunk_length: usize,
     ) -> Option<Vec<TelomericRepeatExplore>> {
@@ -154,21 +168,21 @@ pub mod explore {
         let mut potential_telomeric_repeats = Vec::new();
 
         loop {
-            start = adjacent_indexes[start_pos].0;
+            start = adjacent_indexes[start_pos].position;
             if it == adjacent_indexes.len() - 1 {
                 break;
             }
-            if adjacent_indexes[it].1 == chunk_length {
+            if adjacent_indexes[it].subtracted_position == chunk_length {
                 count += 1;
                 it += 1;
             } else {
-                end = adjacent_indexes[it].0;
+                end = adjacent_indexes[it].position;
                 if count > local_threshold {
                     potential_telomeric_repeats.push(TelomericRepeatExplore {
                         start: start,
                         end: end,
                         count: count,
-                        sequence: adjacent_indexes[it].2.clone(),
+                        sequence: adjacent_indexes[it].sequence.clone(),
                     });
                 }
 
@@ -193,7 +207,7 @@ pub mod explore {
         id: String,
         threshold: i32,
         file: &mut LineWriter<T>,
-    ) -> Option<i32> {
+    ) -> Option<std::io::Result<()>> {
         if data.is_empty() {
             println!(
                 "[-]\tChromosome {}: No consecutive repeats of length {} were identified.",
@@ -224,7 +238,7 @@ pub mod explore {
                     .unwrap_or_else(|_| println!("[-]\tError in writing to file."));
                 }
                 // this seems weird, fix this?
-                break Some(0);
+                break Some(Ok(()));
             }
             // if consecutive sequences are rotations
             if utils::string_rotation(&data[it].sequence, &data[it + 1].sequence) {
