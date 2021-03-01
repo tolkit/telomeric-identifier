@@ -39,7 +39,7 @@ pub mod explore {
         }
 
         // create file
-        let file_name = format!("./explore/{}{}", output, "telomeric_locations.csv");
+        let file_name = format!("./explore/{}{}", output, "_telomeric_locations.csv");
         let explore_file = File::create(&file_name).unwrap();
         let mut explore_file = LineWriter::new(explore_file);
 

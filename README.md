@@ -2,7 +2,7 @@
 
 ## Aims
 
-Simple and fast de-novo identification of telomeric repeats (explore), finding frequency of a telomeric sequence by clade in windows (find), or a user defined sequence in windows (search; not yet implemented).
+Simple and fast de-novo identification of telomeric repeats (explore), finding frequency of a telomeric sequence by clade in windows (find), or a user defined sequence in windows (search).
 
 ## Install
 
@@ -99,3 +99,4 @@ OPTIONS:
 - Implement IUPAC in `tidk search`?
 - Better summary of `tidk explore`?
 - Should `tidk explore` do multiple string length searches by default? As most telomeric repeat sequence units are only 6-8 nucleotides long.
+- Better printing of progress?

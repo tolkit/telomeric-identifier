@@ -1,5 +1,8 @@
 pub mod utils {
     use bio::pattern_matching::bom::BOM;
+    // I'd like to use shift_and, but may have to wait until next public release
+    // of rust-bio (or hard code it here...)
+    // see https://github.com/rust-bio/rust-bio/blob/master/src/pattern_matching/shift_and.rs
     use bio::pattern_matching::kmp::KMP;
 
     #[derive(Debug)]
@@ -24,17 +27,6 @@ pub mod utils {
             indexes: matches.to_owned(),
             length: matches.len(),
         }
-    }
-
-    // not sure this is needed.
-    pub fn longest_repeat(indexes: Motifs) -> Vec<usize> {
-        let mut res = Vec::new();
-        for index in 1..indexes.length {
-            if index + 1 < indexes.length {
-                res.push(indexes.indexes[index + 1] - indexes.indexes[index])
-            }
-        }
-        res
     }
 
     pub fn reverse_complement(dna: &str) -> String {
@@ -67,7 +59,6 @@ pub mod utils {
         loop {
             vec_len = indexes.len();
 
-            // this bool probably needs editing.
             if indexes.is_empty() || index == 0 || index == vec_len - 1 {
                 break;
             }
@@ -82,7 +73,7 @@ pub mod utils {
     // &str rotation
     // see https://github.com/rrbonham96/rust-ctci/blob/a2540532b098a06c29f2a5f06f54fc5717fd7669/src/arrays_and_strings/is_rotation.rs
     // when there is an error/snp in the telomeric sequence, it causes a shift in the
-    // repeat that is returned in 'explore' subcommand. Perhaps this info can be leveraged to count consecutive sequences...
+    // repeat that is returned in 'explore' subcommand. This info can be leveraged to count consecutive sequences...
     pub fn string_rotation(s1: &str, s2: &str) -> bool {
         if s1.len() == s2.len() {
             let mut s2 = s2.to_string();

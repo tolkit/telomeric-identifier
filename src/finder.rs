@@ -31,7 +31,7 @@ pub mod finder {
             println!("[-]\tCreate directory error: {}", e.to_string());
         }
         // create file
-        let file_name = format!("./finder/{}{}", output, "telomeric_repeat_windows.csv");
+        let file_name = format!("./finder/{}{}", output, "_telomeric_repeat_windows.csv");
         let finder_file = File::create(&file_name).unwrap();
         let mut finder_file = LineWriter::new(finder_file);
         // add headers

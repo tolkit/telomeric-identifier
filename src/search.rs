@@ -26,7 +26,7 @@ pub mod search {
             println!("[-]\tCreate directory error: {}", e.to_string());
         }
         // create file
-        let file_name = format!("./search/{}{}", output, "telomeric_repeat_windows.csv");
+        let file_name = format!("./search/{}{}", output, "_telomeric_repeat_windows.csv");
         let search_file = File::create(&file_name).unwrap();
         let mut search_file = LineWriter::new(search_file);
         // add headers
