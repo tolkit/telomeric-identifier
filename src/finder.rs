@@ -23,6 +23,21 @@ pub mod finder {
         let clade = value_t!(matches.value_of("clade"), String).unwrap_or_else(|e| e.exit());
         let clade_info = clades::return_telomere_sequence(&clade);
 
+        if clade_info.length == 1 {
+            println!(
+                "[+]\tSearching genome for a single telomeric repeat: {}",
+                clade_info.seq.get(0).unwrap().to_owned()
+            );
+        } else if clade_info.length > 1 {
+            println!(
+                "[+]\tSearching genome for {} telomeric repeats:",
+                clade_info.length
+            );
+            for telomeric_repeat in 0..clade_info.length {
+                println!("[+]\t\t{}", clade_info.seq.get(telomeric_repeat).unwrap());
+            }
+        }
+
         let window_size = value_t!(matches.value_of("window"), usize).unwrap_or_else(|e| e.exit());
         let output = matches.value_of("output").unwrap();
 
@@ -57,20 +72,24 @@ pub mod finder {
                 clade_info.clone(),
                 telomeric_repeat,
                 window_size,
-                id,
-            );
+                id.clone(),
+            )
+            .expect("Could not write to file.");
+
+            println!("[+]\tChromosome {} processed", id);
         }
+        println!("[+]\tFinished searching genome.");
     }
 
     // write windows to file
-    fn write_window_counts<T: Write>(
+    fn write_window_counts<T: std::io::Write>(
         sequence: bio::io::fasta::Record,
         file: &mut LineWriter<T>,
         clade_info: clades::TelomereSeq,
         telomeric_repeat: &[&str],
         window_size: usize,
         id: String,
-    ) {
+    ) -> std::io::Result<()> {
         // needed as in some clades there is more than one telomeric repeat sequence
         let mut telomeric_repeat_index = 0;
         loop {
@@ -124,5 +143,6 @@ pub mod finder {
             // go to the next telomeric repeat (if there is one)
             telomeric_repeat_index += 1;
         }
+        Ok(())
     }
 }

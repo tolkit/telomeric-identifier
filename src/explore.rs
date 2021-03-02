@@ -30,6 +30,11 @@ pub mod explore {
         let threshold = value_t!(matches.value_of("threshold"), i32).unwrap_or_else(|e| e.exit());
         let output = matches.value_of("output").unwrap();
 
+        println!(
+            "[+]\tExploring genome for potential telomeric repeats of length: {}",
+            length
+        );
+
         // make the reader object
         let reader = fasta::Reader::from_file(input_fasta).expect("[-]\tPath invalid.");
 
@@ -61,11 +66,14 @@ pub mod explore {
             merge_rotated_repeats(
                 formatted.unwrap_or(vec![]),
                 length,
-                id,
+                id.clone(),
                 threshold,
                 &mut explore_file,
             );
+
+            println!("[+]\tChromosome {} processed", id);
         }
+        println!("[+]\tFinished searching genome");
     }
 
     // split the fasta into chunks of size k, where k is the potential telomeric repeat length

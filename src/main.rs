@@ -14,7 +14,7 @@ fn main() {
         .about("A Telomere Identification Toolkit.")
         .subcommand(
             clap::SubCommand::with_name("find")
-                .about("Supply the name of a clade your organsim belongs to.")
+                .about("Supply the name of a clade your organsim belongs to, and this submodule will find all telomeric repeat matches for that clade.")
                 .arg(
                     Arg::with_name("fasta")
                         .short("f")

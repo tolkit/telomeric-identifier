@@ -18,6 +18,11 @@ pub mod search {
         let telomeric_repeat =
             value_t!(matches.value_of("string"), String).unwrap_or_else(|e| e.exit());
 
+        println!(
+            "[+]\tSearching genome for telomeric repeat: {}",
+            telomeric_repeat
+        );
+
         let window_size = value_t!(matches.value_of("window"), usize).unwrap_or_else(|e| e.exit());
         let output = matches.value_of("output").unwrap();
 
@@ -42,18 +47,28 @@ pub mod search {
             let id = record.id().to_owned();
 
             // fn window counter
-            write_window_counts(record, &mut search_file, &telomeric_repeat, window_size, id);
+            write_window_counts(
+                record,
+                &mut search_file,
+                &telomeric_repeat,
+                window_size,
+                id.clone(),
+            )
+            .expect("[-]\tCould not write to file.");
+
+            println!("[+]\tChromosome {} processed", id);
         }
+        println!("[+]\tFinished searching genome.");
     }
 
     // write windows to file
-    fn write_window_counts<T: Write>(
+    fn write_window_counts<T: std::io::Write>(
         sequence: bio::io::fasta::Record,
         file: &mut LineWriter<T>,
         telomeric_repeat: &str,
         window_size: usize,
         id: String,
-    ) {
+    ) -> std::io::Result<()> {
         // get forward and reverse sequences, and length
         // to remove overlapping matches.
         let forward_telomeric_seq = telomeric_repeat;
@@ -96,5 +111,6 @@ pub mod search {
             // increment window
             window_index += window_size;
         }
+        Ok(())
     }
 }
