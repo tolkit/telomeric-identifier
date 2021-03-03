@@ -8,3 +8,6 @@ edition = "2018"
 bio = "*"
 rust-htslib = { version = "*", default-features = false }
 clap = "~2.33.0"
+# for plotting
+csv = "1.1.5"
+serde = "1.0.123"

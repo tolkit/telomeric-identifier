@@ -5,6 +5,7 @@ use std::process;
 use tidk::clades::clades::CLADES;
 use tidk::explore::explore;
 use tidk::finder::finder;
+use tidk::plot::plot;
 use tidk::search::search;
 
 fn main() {
@@ -134,6 +135,20 @@ fn main() {
                         .help("Output filename for the CSVs (without extension)."),
                 )
         )
+        .subcommand(
+            clap::SubCommand::with_name("plot")
+                .about("SVG plot of CSV generated from search or find.")
+                // consider args for chromosome length &
+                // output file name
+                .arg(
+                    Arg::with_name("csv")
+                        .short("c")
+                        .long("csv")
+                        .takes_value(true)
+                        .required(true)
+                        .help("The input CSV file."),
+                )
+        )
         .get_matches();
 
     // feed command line options to each main function
@@ -150,6 +165,11 @@ fn main() {
         "search" => {
             let matches = subcommand.1.unwrap();
             search::search(matches);
+        }
+        "plot" => {
+            let matches = subcommand.1.unwrap();
+            // handle this error please
+            plot::plot(matches);
         }
         _ => {
             println!("Subcommand invalid, run with '--help' for subcommand options. Exiting.");

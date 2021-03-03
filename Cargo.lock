@@ -905,7 +905,9 @@ version = "0.1.2"
 dependencies = [
  "bio",
  "clap",
+ "csv",
  "rust-htslib",
+ "serde",
 ]
 
 [[package]]
