@@ -104,9 +104,33 @@ OPTIONS:
 
 `tidk plot` will plot a CSV from the output of `tidk search`. Working on plotting for `tidk find` (i.e. extending to multiple telomeric repeat sequences in same CSV).
 
-As an example:
+```
+tidk-plot
+SVG plot of CSV generated from search or find.
 
-<img src="./tidk-plot.svg">
+USAGE:
+    tidk plot [OPTIONS] --csv <csv>
+
+FLAGS:
+        --help       Prints help information
+    -V, --version    Prints version information
+
+OPTIONS:
+    -c, --csv <csv>                                The input CSV file.
+    -h, --height <height>                          The height of subplots (px). [default: 200]
+    -l, --length_chromosome <length_chromosome>
+            Chromosomes shorter than this length will be excluded from the plot. Useful for unplaced scaffold exclusion.
+            [default: 1000000]
+    -o, --output <output>                          Output filename for the SVG (without extension). [default: tidk-plot]
+    -w, --width <width>                            The width of plot (px). [default: 1000]
+```
+
+As an example on the ol' Square Spot Rustic <i>Xestia xanthographa</i>:
+
+`tidk find -f fastas/ilXesXant1_1.20201023.curated_primary.fa -c lepidopterac -o Xes`
+`tidk plot -c finder/Xes_telomeric_repeat_windows.csv -o ilXes -h 120 -w 800`
+
+<img src="./ilXes.svg">
 
 ## TODO's
 

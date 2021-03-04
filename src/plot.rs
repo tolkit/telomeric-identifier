@@ -17,19 +17,18 @@ pub mod plot {
         let csv = matches.value_of("csv").unwrap();
         let chromosome_cutoff =
             value_t!(matches.value_of("length_chromosome"), i32).unwrap_or_else(|e| e.exit());
+        let height_subplot = value_t!(matches.value_of("height"), i32).unwrap_or_else(|e| e.exit());
+        let width = value_t!(matches.value_of("width"), i32).unwrap_or_else(|e| e.exit());
         let output = matches.value_of("output").unwrap();
 
         let parsed_csv = parse_csv(csv);
 
-        let width = 1000;
-        // allow height 150 per chromosome?
-        let height_per_plot = 200;
         let chromosome_number = chromosome_number(&parsed_csv, chromosome_cutoff);
 
-        let height: i32 = height_per_plot * chromosome_number as i32 + height_per_plot + MARGIN;
+        let height: i32 = height_subplot * chromosome_number as i32 + MARGIN;
 
         // pass height constant here
-        let plot_data = generate_plot_data(parsed_csv, height, width, height_per_plot);
+        let plot_data = generate_plot_data(parsed_csv, height, width, height_subplot);
 
         let plot_data_filtered: Vec<PlotData> = plot_data
             .clone()
@@ -41,7 +40,7 @@ pub mod plot {
 
         let mut svg_file = File::create(out_filename)?;
 
-        let hover_stroke_width = 3;
+        let hover_stroke_width = 2;
 
         let svg = format!(
             "<?xml version='1.0' encoding='UTF-8'  standalone='no' ?> <!DOCTYPE svg \
@@ -52,7 +51,6 @@ pub mod plot {
 
                  <style type='text/css'> \
                  .chromosome_line:hover {{ stroke-opacity: 1.0; stroke: crimson; stroke-width: {}; }} \
-                 .chromosome_text {{ font: 15px sans-serif; }}
                  </style> \
 
                  {} \
@@ -60,7 +58,7 @@ pub mod plot {
             width,
             height,
             hover_stroke_width,
-            add_all_path_elements(plot_data_filtered)
+            add_all_path_elements(plot_data_filtered, height_subplot as isize)
         );
 
         svg_file.write_all(svg.as_bytes()).expect("unable to write");
@@ -141,7 +139,6 @@ pub mod plot {
             (MARGIN / 2) as f64 + x_bin,
             // y is height - repeat number, a = 0, b = height_per_plot
             // min is again zero (no negative repeats), max is greatest repeats per chromosome
-            //
             height as f64
                 - scale_y(
                     path_vec[0].1 as f64,
@@ -172,16 +169,17 @@ pub mod plot {
         path
     }
 
-    fn add_all_path_elements(plot_data: Vec<PlotData>) -> String {
+    fn add_all_path_elements(plot_data: Vec<PlotData>, height_subplot: isize) -> String {
         let mut all_paths = String::new();
         for (i, row) in plot_data.iter().enumerate() {
             // add text tag here
             all_paths += &format!(
-                "<text x='25' y='{}' class='chromosome_label'>{}\n↓</text>",
-                (1 + i as isize * 200) + 255,
+                "<text x='25' y='{}' class='chromosome_label' font-family='monospace'>{}\n↓</text>",
+                // is +55 a good offset..?
+                (1 + i as isize * height_subplot) + 55,
                 row.id
             );
-            all_paths += &format!("<path d='{}' class='chromosome_line' stroke='black' fill='none' stroke-width='1' transform='translate(0,{})'/>\n", row.path, i as isize * -200);
+            all_paths += &format!("<path d='{}' class='chromosome_line' stroke='black' fill='none' stroke-width='1' transform='translate(0,{})'/>\n", row.path, i as isize * -height_subplot);
         }
         all_paths
     }

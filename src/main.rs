@@ -157,6 +157,24 @@ fn main() {
                         .help("Chromosomes shorter than this length will be excluded from the plot. Useful for unplaced scaffold exclusion."),
                 )
                 .arg(
+                    Arg::with_name("height")
+                        .short("h")
+                        .long("height")
+                        .takes_value(true)
+                        .required(false)
+                        .default_value("200")
+                        .help("The height of subplots (px)."),
+                )
+                .arg(
+                    Arg::with_name("width")
+                        .short("w")
+                        .long("width")
+                        .takes_value(true)
+                        .required(false)
+                        .default_value("1000")
+                        .help("The width of plot (px)."),
+                )
+                .arg(
                     Arg::with_name("output")
                         .short("o")
                         .long("output")
