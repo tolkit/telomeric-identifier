@@ -138,7 +138,6 @@ fn main() {
         .subcommand(
             clap::SubCommand::with_name("plot")
                 .about("SVG plot of CSV generated from search or find.")
-                // consider args for chromosome length &
                 // output file name
                 .arg(
                     Arg::with_name("csv")
@@ -147,6 +146,24 @@ fn main() {
                         .takes_value(true)
                         .required(true)
                         .help("The input CSV file."),
+                )
+                .arg(
+                    Arg::with_name("length_chromosome")
+                        .short("l")
+                        .long("length_chromosome")
+                        .takes_value(true)
+                        .required(false)
+                        .default_value("1000000") // 1 million bases
+                        .help("Chromosomes shorter than this length will be excluded from the plot. Useful for unplaced scaffold exclusion."),
+                )
+                .arg(
+                    Arg::with_name("output")
+                        .short("o")
+                        .long("output")
+                        .takes_value(true)
+                        .required(false)
+                        .default_value("tidk-plot")
+                        .help("Output filename for the SVG (without extension)."),
                 )
         )
         .get_matches();
@@ -168,8 +185,8 @@ fn main() {
         }
         "plot" => {
             let matches = subcommand.1.unwrap();
-            // handle this error please
-            plot::plot(matches);
+            // handle this potential error better please
+            plot::plot(matches).unwrap();
         }
         _ => {
             println!("Subcommand invalid, run with '--help' for subcommand options. Exiting.");

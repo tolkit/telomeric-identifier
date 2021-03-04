@@ -4,6 +4,8 @@
 
 Simple and fast de-novo identification of telomeric repeats (explore), finding frequency of a telomeric sequence by clade in windows (find), or a user defined sequence in windows (search).
 
+For quick plotting and inspection, there's also `tidk plot`.
+
 ## Install
 
 As with other Rust projects, you have to complile yourself. <a href="https://www.rust-lang.org/tools/install">Download rust</a>, clone this repo, and then run:
@@ -28,8 +30,10 @@ FLAGS:
 
 SUBCOMMANDS:
     explore    Use a search of all substrings of length k to query a genome for a telomere sequence.
-    find       Supply the name of a clade your organsim belongs to.
+    find       Supply the name of a clade your organsim belongs to, and this submodule will find all telomeric
+               repeat matches for that clade.
     help       Prints this message or the help of the given subcommand(s)
+    plot       SVG plot of CSV generated from search or find.
     search     Search the input genome with a specific telomeric repeat search string.
 ```
 
@@ -50,14 +54,16 @@ OPTIONS:
     -f, --fasta <fasta>            The input fasta file.
     -l, --length <length>          Length of substring.
     -o, --output <output>          Output filename for the CSVs (without extension). [default: tidk-explore]
-    -t, --threshold <threshold>    Positions of repeats are only reported if they occur sequentially in a greater number than the threshold. [default: 100]
+    -t, --threshold <threshold>    Positions of repeats are only reported if they occur sequentially in a greater number
+                                   than the threshold. [default: 100]
 ```
 
 `tidk find` will take an input clade, and match the known telomeric repeat for that clade (or repeats plural) and search the genome. Uses the <a href="http://telomerase.asu.edu/sequences_telomere.html">telomeric repeat database</a>. Prototype code done.
 
 ```
 tidk-find
-Supply the name of a clade your organsim belongs to.
+Supply the name of a clade your organsim belongs to, and this submodule will find all telomeric repeat matches for that
+clade.
 
 USAGE:
     tidk find [FLAGS] --clade <clade> --fasta <fasta> --output <output> --window <window>
@@ -83,7 +89,7 @@ tidk-search
 Search the input genome with a specific telomeric repeat search string.
 
 USAGE:
-    tidk search --fasta <fasta> --string <string>
+    tidk search --fasta <fasta> --output <output> --string <string> --window <window>
 
 FLAGS:
     -h, --help       Prints help information
@@ -91,12 +97,19 @@ FLAGS:
 
 OPTIONS:
     -f, --fasta <fasta>      The input fasta file.
+    -o, --output <output>    Output filename for the CSVs (without extension). [default: tidk-find]
     -s, --string <string>    Supply a DNA string to query the genome with.
+    -w, --window <window>    Window size to calculate telomeric repeat counts in. [default: 10000]
 ```
+
+`tidk plot` will plot a CSV from the output of `tidk search`. Working on plotting for `tidk find` (i.e. extending to multiple telomeric repeat sequences in same CSV).
+
+As an example:
+
+<img src="./tidk-plot.svg">
 
 ## TODO's
 
 - Implement IUPAC in `tidk search`?
 - Better summary of `tidk explore`?
 - Should `tidk explore` do multiple string length searches by default? As most telomeric repeat sequence units are only 6-8 nucleotides long.
-- Better printing of progress?
