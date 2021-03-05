@@ -10,6 +10,7 @@ pub mod finder {
     use std::str;
 
     // finder uses the clade specific telomere sequence and queries against the genome.
+
     pub fn finder(matches: &clap::ArgMatches) {
         // print table of telomeric sequences
         if matches.is_present("print") {
@@ -81,7 +82,9 @@ pub mod finder {
         println!("[+]\tFinished searching genome.");
     }
 
-    // write windows to file
+    // creates the window iterator and iterates over each iteration of the
+    // fasta file, writing on the fly.
+
     fn write_window_counts<T: std::io::Write>(
         sequence: bio::io::fasta::Record,
         file: &mut LineWriter<T>,

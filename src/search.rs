@@ -9,7 +9,7 @@ pub mod search {
     use std::io::Write;
     use std::str;
 
-    // essentially same as finder
+    // uses a user defined string to query against the genome
 
     pub fn search(matches: &clap::ArgMatches) {
         let input_fasta = matches.value_of("fasta").unwrap();
@@ -61,7 +61,9 @@ pub mod search {
         println!("[+]\tFinished searching genome.");
     }
 
-    // write windows to file
+    // iterate over windows, counting occurrences of specified string
+    // and write to file on the fly.
+
     fn write_window_counts<T: std::io::Write>(
         sequence: bio::io::fasta::Record,
         file: &mut LineWriter<T>,

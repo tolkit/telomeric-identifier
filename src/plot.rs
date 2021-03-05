@@ -8,12 +8,15 @@ pub mod plot {
     use std::fs::File;
     use std::io::prelude::*;
 
+    // plot margins
+    const MARGIN: i32 = 40;
+
     // plot is main function
-    // takes a csv (currently where there is only one telomeric repeat present,
-    // so not suitable for tidk find where multiple telomeric repeats are queried)
-    // and produces an SVG
+    // takes a csv and produces an SVG (currently where there is only one telomeric repeat present,
+    // so not suitable for `tidk find` where multiple telomeric repeats are queried)
 
     pub fn plot(matches: &clap::ArgMatches) -> std::io::Result<()> {
+        // parse the command line options
         let csv = matches.value_of("csv").unwrap();
         let chromosome_cutoff =
             value_t!(matches.value_of("length_chromosome"), i32).unwrap_or_else(|e| e.exit());
@@ -21,27 +24,30 @@ pub mod plot {
         let width = value_t!(matches.value_of("width"), i32).unwrap_or_else(|e| e.exit());
         let output = matches.value_of("output").unwrap();
 
+        // parse the csv
         let parsed_csv = parse_csv(csv);
 
+        // calculate the number of chromosomes to plot with the length cutoff
         let chromosome_number = chromosome_number(&parsed_csv, chromosome_cutoff);
 
+        // height of plot
         let height: i32 = height_subplot * chromosome_number as i32 + MARGIN;
 
-        // pass height constant here
+        // generate the plot data (see struct PlotData)
         let plot_data = generate_plot_data(parsed_csv, height, width, height_subplot);
 
+        // filter the data based on the cutoff
         let plot_data_filtered: Vec<PlotData> = plot_data
             .clone()
             .into_iter()
             .filter(|x| x.max > chromosome_cutoff as usize)
             .collect();
 
+        // make the writable svg file
         let out_filename = format!("{}.svg", output);
-
         let mut svg_file = File::create(out_filename)?;
 
-        let hover_stroke_width = 2;
-
+        // construct the svg
         let svg = format!(
             "<?xml version='1.0' encoding='UTF-8'  standalone='no' ?> <!DOCTYPE svg \
                  PUBLIC '-//W3C//DTD SVG 1.0//EN' \
@@ -50,14 +56,13 @@ pub mod plot {
                  xmlns:xlink='http://www.w3.org/1999/xlink'> \
 
                  <style type='text/css'> \
-                 .chromosome_line:hover {{ stroke-opacity: 1.0; stroke: crimson; stroke-width: {}; }} \
+                 .chromosome_line:hover {{ stroke-opacity: 1.0; stroke: crimson; stroke-width: 2; }} \
                  </style> \
 
                  {} \
                  </svg>",
             width,
             height,
-            hover_stroke_width,
             add_all_path_elements(plot_data_filtered, height_subplot as isize)
         );
 
@@ -66,7 +71,9 @@ pub mod plot {
         Ok(())
     }
 
-    // the CSV records
+    // deserialise the CSV records into a struct
+    // to make the names nice
+
     #[derive(Debug, Deserialize)]
     pub struct TelomericRepeatRecord {
         pub ID: String,
@@ -75,6 +82,8 @@ pub mod plot {
         pub reverse_repeat_number: i32,
         pub telomeric_repeat: String,
     }
+
+    // this parses the csv into a Vec of Telomeric Repeat Records
 
     fn parse_csv(path: &str) -> Vec<TelomericRepeatRecord> {
         let mut csv_reader = ReaderBuilder::new().from_path(path).unwrap();
@@ -86,7 +95,11 @@ pub mod plot {
         plot_coords_vec
     }
 
-    fn chromosome_number(parsed_csv: &Vec<TelomericRepeatRecord>, size: i32) -> usize {
+    // takes the parsed csv and the chromosome cutoff
+    // loops through file to find the lengths of all the chromosomes (to the nearest window)
+    // and reports the number of elements.
+
+    fn chromosome_number(parsed_csv: &Vec<TelomericRepeatRecord>, chromosome_cutoff: i32) -> usize {
         // so we can break the loop
         let file_length = parsed_csv.len();
         // the iteration of the loop
@@ -103,7 +116,7 @@ pub mod plot {
                 it += 1;
                 continue;
             } else {
-                if parsed_csv[it].window > size {
+                if parsed_csv[it].window > chromosome_cutoff {
                     max_sizes.push(parsed_csv[it].window);
                 }
                 it += 1;
@@ -111,12 +124,18 @@ pub mod plot {
         }
         max_sizes.len()
     }
-    // scale a range [min,max] to [a,b]
+
+    // scale a range [min, max] to custom range [a, b]
+    // our range will be [0, height of subplots]
+
     fn scale_y(y: f64, a: f64, b: f64, min: f64, max: f64) -> f64 {
         (((b - a) * (y - min)) / (max - min)) + a
     }
 
-    const MARGIN: i32 = 40;
+    // make the SVG path elements:
+    // in format `Mx,yLx1,y1Lx2,y2` etc
+    // this is also where the paths are scaled to
+    // the plot width and subplot height
 
     fn make_path_element(
         path_vec: Vec<(i32, i32)>,
@@ -169,6 +188,10 @@ pub mod plot {
         path
     }
 
+    // add the path elements from Vec<PlotData.path> to their SVG tags
+    // also add chromosome text here
+    // TODO: axis labels, lines and ticks go here if we want them
+
     fn add_all_path_elements(plot_data: Vec<PlotData>, height_subplot: isize) -> String {
         let mut all_paths = String::new();
         for (i, row) in plot_data.iter().enumerate() {
@@ -184,6 +207,8 @@ pub mod plot {
         all_paths
     }
 
+    // the final data structure
+
     #[derive(Debug, Clone)]
     pub struct PlotData {
         // chromosome
@@ -195,6 +220,10 @@ pub mod plot {
         // name of the telomeric repeat (not needed?)
         pub sequence: String,
     }
+
+    // loop through the parsed CSV file
+    // calculate SVG path elements on the fly
+    // along with other PlotData elements
 
     fn generate_plot_data(
         parsed_csv: Vec<TelomericRepeatRecord>,

@@ -127,7 +127,7 @@ OPTIONS:
 
 As an example on the ol' Square Spot Rustic <i>Xestia xanthographa</i>:
 
-`tidk find -f fastas/ilXesXant1_1.20201023.curated_primary.fa -c lepidopterac -o Xes`
+`tidk find -f fastas/ilXesXant1_1.20201023.curated_primary.fa -c lepidopterac -o Xes`\ 
 `tidk plot -c finder/Xes_telomeric_repeat_windows.csv -o ilXes -h 120 -w 800`
 
 <img src="./ilXes.svg">

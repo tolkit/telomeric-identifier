@@ -5,6 +5,10 @@ pub mod utils {
     // see https://github.com/rust-bio/rust-bio/blob/master/src/pattern_matching/shift_and.rs
     use bio::pattern_matching::kmp::KMP;
 
+    // this does the hard lifting in `tidk search` and `tidk find`
+    // take input putative telomeric repeat (motif) and search against
+    // a dna sequence. Optimised for motif length.
+
     #[derive(Debug)]
     pub struct Motifs {
         pub indexes: Vec<usize>,
@@ -29,6 +33,8 @@ pub mod utils {
         }
     }
 
+    // calculate the reverse complement of a telomeric repeat
+
     pub fn reverse_complement(dna: &str) -> String {
         let dna_chars = dna.chars();
         let mut revcomp = Vec::new();
@@ -51,6 +57,9 @@ pub mod utils {
         }
     }
 
+    // not sure if this function is necessary, but it looks at the indexes of the motifs
+    // in the genome and removes indexes which occur consecutively less than the pattern length apart
+
     pub fn remove_overlapping_indexes(indexes: Motifs, pattern_length: usize) -> Vec<usize> {
         let mut indexes = indexes.indexes;
         let mut index = 0;
@@ -70,10 +79,11 @@ pub mod utils {
         indexes
     }
 
-    // &str rotation
+    // string rotation
     // see https://github.com/rrbonham96/rust-ctci/blob/a2540532b098a06c29f2a5f06f54fc5717fd7669/src/arrays_and_strings/is_rotation.rs
     // when there is an error/snp in the telomeric sequence, it causes a shift in the
     // repeat that is returned in 'explore' subcommand. This info can be leveraged to count consecutive sequences...
+
     pub fn string_rotation(s1: &str, s2: &str) -> bool {
         if s1.len() == s2.len() {
             let mut s2 = s2.to_string();

@@ -1,4 +1,6 @@
-// how to build a telomere identification toolkit?
+// A telomere identification toolkit
+// Max Brown 2021, Wellcome Sanger Institute
+// mb39@sanger.ac.uk
 
 use clap::{App, Arg};
 use std::process;
@@ -9,6 +11,7 @@ use tidk::plot::plot;
 use tidk::search::search;
 
 fn main() {
+    // command line options
     let matches = App::new("TIDK")
         .version(clap::crate_version!())
         .author("Max Brown <mb39@sanger.ac.uk>")
@@ -203,7 +206,6 @@ fn main() {
         }
         "plot" => {
             let matches = subcommand.1.unwrap();
-            // handle this potential error better please
             plot::plot(matches).unwrap();
         }
         _ => {
