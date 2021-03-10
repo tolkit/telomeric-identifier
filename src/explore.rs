@@ -27,16 +27,13 @@ pub mod explore {
         // parse arguments from main
         let input_fasta = matches.value_of("fasta").unwrap();
         let length = value_t!(matches.value_of("length"), usize).unwrap_or_else(|e| e.exit());
+
+        // if length is not set, these are the lengths (and length itself is set to zero)
+        let minimum = value_t!(matches.value_of("minimum"), usize).unwrap_or_else(|e| e.exit());
+        let maximum = value_t!(matches.value_of("maximum"), usize).unwrap_or_else(|e| e.exit());
+
         let threshold = value_t!(matches.value_of("threshold"), i32).unwrap_or_else(|e| e.exit());
         let output = matches.value_of("output").unwrap();
-
-        println!(
-            "[+]\tExploring genome for potential telomeric repeats of length: {}",
-            length
-        );
-
-        // make the reader object
-        let reader = fasta::Reader::from_file(input_fasta).expect("[-]\tPath invalid.");
 
         // create directory for output
         if let Err(e) = create_dir_all("./explore/") {
@@ -51,28 +48,66 @@ pub mod explore {
         // add headers
         writeln!(
             explore_file,
-            "ID,start_pos,end_pos,repeat_number,repeat_sequence"
+            "ID,start_pos,end_pos,repeat_number,repeat_sequence,sequence_length"
         )
         .unwrap_or_else(|_| println!("[-]\tError in writing to file."));
 
-        // iterate over the fasta records
-        for result in reader.records() {
-            let record = result.expect("[-]\tError during fasta record parsing.");
-            let id = record.id().to_owned();
-
-            let indexes = chunk_fasta(record, length);
-            let adjacents = calculate_indexes(indexes);
-            let formatted = generate_explore_data(adjacents, id.clone(), length);
-            merge_rotated_repeats(
-                formatted.unwrap_or(vec![]),
-                length,
-                id.clone(),
-                threshold,
-                &mut explore_file,
+        // i.e. if you chose a length, as opposed to a minmum/maximum
+        if length > 0 {
+            println!(
+                "[+]\tExploring genome for potential telomeric repeats of length: {}",
+                length
             );
+            let reader = fasta::Reader::from_file(input_fasta).expect("[-]\tPath invalid.");
 
-            println!("[+]\tChromosome {} processed", id);
+            for result in reader.records() {
+                let record = result.expect("[-]\tError during fasta record parsing.");
+                let id = record.id().to_owned();
+
+                let indexes = chunk_fasta(record, length);
+                let adjacents = calculate_indexes(indexes);
+                let formatted = generate_explore_data(adjacents, id.clone(), length);
+                merge_rotated_repeats(
+                    formatted.unwrap_or(vec![]),
+                    length,
+                    id.clone(),
+                    threshold,
+                    &mut explore_file,
+                );
+
+                println!("[+]\tChromosome {} processed", id);
+            }
+        } else {
+            // how can I parallelise this??
+            println!(
+                "[+]\tExploring genome for potential telomeric repeats between lengths {} and {}.",
+                minimum, maximum
+            );
+            for length in minimum..maximum + 1 {
+                println!("[+]\t\tFinding telomeric repeat length: {}", length);
+
+                let reader = fasta::Reader::from_file(input_fasta).expect("[-]\tPath invalid.");
+
+                for result in reader.records() {
+                    let record = result.expect("[-]\tError during fasta record parsing.");
+                    let id = record.id().to_owned();
+
+                    let indexes = chunk_fasta(record, length);
+                    let adjacents = calculate_indexes(indexes);
+                    let formatted = generate_explore_data(adjacents, id.clone(), length);
+                    merge_rotated_repeats(
+                        formatted.unwrap_or(vec![]),
+                        length,
+                        id.clone(),
+                        threshold,
+                        &mut explore_file,
+                    );
+
+                    println!("[+]\tChromosome {} processed", id);
+                }
+            }
         }
+
         println!("[+]\tFinished searching genome");
     }
 
@@ -240,8 +275,8 @@ pub mod explore {
                 if count > threshold {
                     writeln!(
                         file,
-                        "{},{},{},{},{}",
-                        id, start, end, count, data[it].sequence
+                        "{},{},{},{},{},{}",
+                        id, start, end, count, data[it].sequence, chunk_length
                     )
                     .unwrap_or_else(|_| println!("[-]\tError in writing to file."));
                 }
@@ -258,8 +293,8 @@ pub mod explore {
                 if count > threshold {
                     writeln!(
                         file,
-                        "{},{},{},{},{}",
-                        id, start, end, count, data[it].sequence
+                        "{},{},{},{},{},{}",
+                        id, start, end, count, data[it].sequence, chunk_length
                     )
                     .unwrap_or_else(|_| println!("[-]\tError in writing to file."));
                 }

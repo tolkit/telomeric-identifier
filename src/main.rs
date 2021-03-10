@@ -78,8 +78,27 @@ fn main() {
                         .short("l")
                         .long("length")
                         .takes_value(true)
-                        .required(true)
+                        .required_unless_all(&["minimum", "maximum"])
+                        .default_value_if("minimum", None, "0")
                         .help("Length of substring."),
+                )
+                .arg(
+                    Arg::with_name("minimum")
+                        .short("min")
+                        .long("minimum")
+                        .takes_value(true)
+                        .required_unless("length")
+                        .default_value("5")
+                        .help("Minimum length of substring."),
+                )
+                .arg(
+                    Arg::with_name("maximum")
+                        .short("max")
+                        .long("maximum")
+                        .takes_value(true)
+                        .required_unless("length")
+                        .default_value("12")
+                        .help("Maximum length of substring."),
                 )
                 .arg(
                     Arg::with_name("threshold")
@@ -124,7 +143,7 @@ fn main() {
                         .short("w")
                         .long("window")
                         .takes_value(true)
-                        .required_unless("print")
+                        .required(false)
                         .default_value("10000")
                         .help("Window size to calculate telomeric repeat counts in."),
                 )
@@ -133,7 +152,7 @@ fn main() {
                         .short("o")
                         .long("output")
                         .takes_value(true)
-                        .required_unless("print")
+                        .required(false)
                         .default_value("tidk-find")
                         .help("Output filename for the CSVs (without extension)."),
                 )

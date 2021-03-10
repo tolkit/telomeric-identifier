@@ -59,8 +59,15 @@ pub mod clades {
             },
             "hymenoptera" => TelomereSeq {
                 clade: "Hymenoptera",
-                seq: Box::new(&["TTAGG"]),
-                length: 1,
+                // general, Bombus, Ectemnius, Vespula, Vespa
+                seq: Box::new(&[
+                    "TTAGG",
+                    "TTAGGTTGGGG",
+                    "TTAGGTCTGGG",
+                    "TTGCGTCTGGG",
+                    "TTGCGTCAGGG",
+                ]),
+                length: 5,
             },
             "lepidoptera" => TelomereSeq {
                 clade: "Lepidoptera",
