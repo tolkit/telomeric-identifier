@@ -37,7 +37,7 @@ pub mod search {
         // add headers
         writeln!(
             search_file,
-            "ID,window,forward_repeat_number,reverse_repeat_number,telomeric_repeat"
+            "id,window,forward_repeat_number,reverse_repeat_number,telomeric_repeat"
         )
         .unwrap_or_else(|_| println!("[-]\tError in writing to file."));
 

@@ -76,7 +76,7 @@ pub mod plot {
 
     #[derive(Debug, Deserialize)]
     pub struct TelomericRepeatRecord {
-        pub ID: String,
+        pub id: String,
         pub window: i32,
         pub forward_repeat_number: i32,
         pub reverse_repeat_number: i32,
@@ -112,7 +112,7 @@ pub mod plot {
                 break;
             }
 
-            if parsed_csv[it].ID == parsed_csv[it + 1].ID {
+            if parsed_csv[it].id == parsed_csv[it + 1].id {
                 it += 1;
                 continue;
             } else {
@@ -243,7 +243,7 @@ pub mod plot {
         loop {
             if it == file_length - 1 {
                 plot_data.push(PlotData {
-                    id: parsed_csv[it].ID.clone(),
+                    id: parsed_csv[it].id.clone(),
                     path: make_path_element(
                         path_vec.clone(),
                         path_vec.clone().len(),
@@ -258,7 +258,7 @@ pub mod plot {
                 break;
             }
 
-            if parsed_csv[it].ID == parsed_csv[it + 1].ID {
+            if parsed_csv[it].id == parsed_csv[it + 1].id {
                 // calculate y max
                 if y_max
                     <= parsed_csv[it].forward_repeat_number + parsed_csv[it].reverse_repeat_number
@@ -277,7 +277,7 @@ pub mod plot {
                 // calculate the svg path element from path_vec here
 
                 plot_data.push(PlotData {
-                    id: parsed_csv[it].ID.clone(),
+                    id: parsed_csv[it].id.clone(),
                     path: make_path_element(
                         path_vec.clone(),
                         path_vec.clone().len(),

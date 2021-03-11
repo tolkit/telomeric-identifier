@@ -20,8 +20,8 @@ pub mod explore {
 
     // this should identify the telomeric repeat as reverse complement at either
     // end of a chromosome
-
-    // TODO: error handling is a bit crappy at the moment, fix this.
+    // I am not sure this will be as effective a tool on raw reads, but this remains
+    // to be tested.
 
     pub fn explore(matches: &clap::ArgMatches) {
         // parse arguments from main
@@ -34,6 +34,9 @@ pub mod explore {
 
         let threshold = value_t!(matches.value_of("threshold"), i32).unwrap_or_else(|e| e.exit());
         let output = matches.value_of("output").unwrap();
+
+        let dist_from_chromosome_end =
+            value_t!(matches.value_of("distance"), usize).unwrap_or_else(|e| e.exit());
 
         // create directory for output
         if let Err(e) = create_dir_all("./explore/") {
@@ -48,7 +51,7 @@ pub mod explore {
         // add headers
         writeln!(
             explore_file,
-            "ID,start_pos,end_pos,repeat_number,repeat_sequence,sequence_length"
+            "id,start_pos,end_pos,repeat_number,repeat_sequence,sequence_length"
         )
         .unwrap_or_else(|_| println!("[-]\tError in writing to file."));
 
@@ -63,6 +66,7 @@ pub mod explore {
             for result in reader.records() {
                 let record = result.expect("[-]\tError during fasta record parsing.");
                 let id = record.id().to_owned();
+                let seq_len = record.seq().len();
 
                 let indexes = chunk_fasta(record, length);
                 let adjacents = calculate_indexes(indexes);
@@ -73,6 +77,8 @@ pub mod explore {
                     id.clone(),
                     threshold,
                     &mut explore_file,
+                    seq_len,
+                    dist_from_chromosome_end,
                 );
 
                 println!("[+]\tChromosome {} processed", id);
@@ -86,11 +92,14 @@ pub mod explore {
             for length in minimum..maximum + 1 {
                 println!("[+]\t\tFinding telomeric repeat length: {}", length);
 
+                // have to call reader in the loop, as otherwise `reader` doesn't live long enough.
+                // I expect it's not an expensive call anyway.
                 let reader = fasta::Reader::from_file(input_fasta).expect("[-]\tPath invalid.");
 
                 for result in reader.records() {
                     let record = result.expect("[-]\tError during fasta record parsing.");
                     let id = record.id().to_owned();
+                    let seq_len = record.seq().len();
 
                     let indexes = chunk_fasta(record, length);
                     let adjacents = calculate_indexes(indexes);
@@ -101,6 +110,8 @@ pub mod explore {
                         id.clone(),
                         threshold,
                         &mut explore_file,
+                        seq_len,
+                        dist_from_chromosome_end,
                     );
 
                     println!("[+]\tChromosome {} processed", id);
@@ -242,7 +253,6 @@ pub mod explore {
     // string rotations of one another, yielding better summaries.
 
     // TODO: can the sequences be summarised? I.e. ID reverse complement sets.
-    // what data structure should be returned?
 
     fn merge_rotated_repeats<T: std::io::Write>(
         data: Vec<TelomericRepeatExplore>,
@@ -250,6 +260,8 @@ pub mod explore {
         id: String,
         threshold: i32,
         file: &mut LineWriter<T>,
+        seq_len: usize,
+        dist_from_chromosome_end: usize,
     ) -> Option<std::io::Result<()>> {
         if data.is_empty() {
             println!(
@@ -273,12 +285,15 @@ pub mod explore {
             if it == data.len() - 1 {
                 // if all telomere repeat to the end, this is not printed.
                 if count > threshold {
-                    writeln!(
-                        file,
-                        "{},{},{},{},{},{}",
-                        id, start, end, count, data[it].sequence, chunk_length
-                    )
-                    .unwrap_or_else(|_| println!("[-]\tError in writing to file."));
+                    if start < dist_from_chromosome_end || end > seq_len - dist_from_chromosome_end
+                    {
+                        writeln!(
+                            file,
+                            "{},{},{},{},{},{}",
+                            id, start, end, count, data[it].sequence, chunk_length
+                        )
+                        .unwrap_or_else(|_| println!("[-]\tError in writing to file."));
+                    }
                 }
                 // this seems weird, fix this?
                 break Some(Ok(()));
@@ -291,12 +306,15 @@ pub mod explore {
             } else {
                 end = data[it].end;
                 if count > threshold {
-                    writeln!(
-                        file,
-                        "{},{},{},{},{},{}",
-                        id, start, end, count, data[it].sequence, chunk_length
-                    )
-                    .unwrap_or_else(|_| println!("[-]\tError in writing to file."));
+                    if start < dist_from_chromosome_end || end > seq_len - dist_from_chromosome_end
+                    {
+                        writeln!(
+                            file,
+                            "{},{},{},{},{},{}",
+                            id, start, end, count, data[it].sequence, chunk_length
+                        )
+                        .unwrap_or_else(|_| println!("[-]\tError in writing to file."));
+                    }
                 }
                 it += 1;
                 start_index = it;

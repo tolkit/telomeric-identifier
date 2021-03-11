@@ -84,7 +84,7 @@ fn main() {
                 )
                 .arg(
                     Arg::with_name("minimum")
-                        .short("min")
+                        .short("m")
                         .long("minimum")
                         .takes_value(true)
                         .required_unless("length")
@@ -93,7 +93,7 @@ fn main() {
                 )
                 .arg(
                     Arg::with_name("maximum")
-                        .short("max")
+                        .short("x")
                         .long("maximum")
                         .takes_value(true)
                         .required_unless("length")
@@ -108,6 +108,15 @@ fn main() {
                         .required(false)
                         .default_value("100")
                         .help("Positions of repeats are only reported if they occur sequentially in a greater number than the threshold."),
+                )
+                .arg(
+                    Arg::with_name("distance")
+                        .short("d")
+                        .long("distance")
+                        .takes_value(true)
+                        .required(false)
+                        .default_value("150000")
+                        .help("The distance in base pairs from the beginning or end of a chromosome, to report potential telomeric repeats in."),
                 )
                 .arg(
                     Arg::with_name("output")
@@ -153,7 +162,7 @@ fn main() {
                         .long("output")
                         .takes_value(true)
                         .required(false)
-                        .default_value("tidk-find")
+                        .default_value("tidk-search")
                         .help("Output filename for the CSVs (without extension)."),
                 )
         )
