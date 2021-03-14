@@ -93,8 +93,6 @@ pub mod utils {
         false
     }
 
-    // BACK UP CODE.
-
     //https://stackoverflow.com/questions/50380352/how-can-i-group-consecutive-integers-in-a-vector-in-rust
     // group consecutive numbers in a slice into their own slice in a vec.
     fn consecutive_slices(data: &[usize]) -> Vec<&[usize]> {
@@ -137,11 +135,11 @@ pub mod utils {
         // determine what to do next.
         let max_cs_lens = match c_slices_lens.iter().max() {
             Some(x) => x,
-            _ => &0usize,
+            None => &0usize,
         };
         let max_gs_lens = match g_slices_lens.iter().max() {
             Some(x) => x,
-            _ => &0usize,
+            None => &0usize,
         };
 
         // if there are no G's or the C's outnumber the G's,
@@ -181,7 +179,6 @@ pub mod utils {
             // if the index is at the start, we don't need to shuffle the string
             if index == &tr.len() {
                 return tr.to_owned();
-                // println!("{:?}", tr);
             } else {
                 let start = &tr[*index + 1..];
                 let end = &tr[..*index];

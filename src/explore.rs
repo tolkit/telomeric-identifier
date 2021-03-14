@@ -354,6 +354,13 @@ pub mod explore {
         }
     }
 
+    // takes the final aggregation of potential telomeric repeats across chromosomes
+    // and also potentially across different lengths, and tries to find the most likely
+    // telomeric repeat. See utils::format_telomeric_repeat() for the explanation of the
+    // formatting.
+    // the algorithm here sorts the vector of formatted telomeric repeats by the sequence and their
+    // length, then loops over this structure.
+
     fn get_single_telomeric_repeat_estimate(telomeric_repeats: &mut Vec<FormatTelomericRepeat>) {
         if telomeric_repeats.is_empty() {
             println!("[-]\tNo potential telomeric repeats found.");
@@ -386,7 +393,7 @@ pub mod explore {
                         .then(d2.count.cmp(&d1.count))
                         .then(d1.sequence.cmp(&d2.sequence))
                 });
-                // if we are left with onlyone element, this is the best case scenario
+                // if we are left with only one element, this is the best case scenario
                 // so break!
                 if telomeric_repeats.len() == 1 {
                     break;
@@ -394,6 +401,7 @@ pub mod explore {
                 // if we get to the situation where in the length vector, the last two elements
                 // have the same length, there is not going to be a more optimal solution.
                 // so break!
+                // should the 2 be 1 here..?
                 if len_vec.len() > 2 {
                     if len_vec[len_vec.len() - 1] == len_vec[len_vec.len() - 2] {
                         break;
