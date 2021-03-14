@@ -55,6 +55,8 @@ pub mod explore {
         )
         .unwrap_or_else(|_| println!("[-]\tError in writing to file."));
 
+        // to report the telomeres...
+        let mut output_vec: Vec<FormatTelomericRepeat> = Vec::new();
         // i.e. if you chose a length, as opposed to a minmum/maximum
         if length > 0 {
             println!(
@@ -71,14 +73,17 @@ pub mod explore {
                 let indexes = chunk_fasta(record, length);
                 let adjacents = calculate_indexes(indexes);
                 let formatted = generate_explore_data(adjacents, id.clone(), length);
-                merge_rotated_repeats(
-                    formatted.unwrap_or(vec![]),
-                    length,
-                    id.clone(),
-                    threshold,
-                    &mut explore_file,
-                    seq_len,
-                    dist_from_chromosome_end,
+                output_vec.append(
+                    &mut merge_rotated_repeats(
+                        formatted.unwrap_or(vec![]),
+                        length,
+                        id.clone(),
+                        threshold,
+                        &mut explore_file,
+                        seq_len,
+                        dist_from_chromosome_end,
+                    )
+                    .unwrap_or(vec![]),
                 );
 
                 println!("[+]\tChromosome {} processed", id);
@@ -104,22 +109,26 @@ pub mod explore {
                     let indexes = chunk_fasta(record, length);
                     let adjacents = calculate_indexes(indexes);
                     let formatted = generate_explore_data(adjacents, id.clone(), length);
-                    merge_rotated_repeats(
-                        formatted.unwrap_or(vec![]),
-                        length,
-                        id.clone(),
-                        threshold,
-                        &mut explore_file,
-                        seq_len,
-                        dist_from_chromosome_end,
+                    output_vec.append(
+                        &mut merge_rotated_repeats(
+                            formatted.unwrap_or(vec![]),
+                            length,
+                            id.clone(),
+                            threshold,
+                            &mut explore_file,
+                            seq_len,
+                            dist_from_chromosome_end,
+                        )
+                        .unwrap_or(vec![]),
                     );
 
                     println!("[+]\tChromosome {} processed", id);
                 }
             }
         }
-
         println!("[+]\tFinished searching genome");
+        // print likely telomeric repeat
+        get_single_telomeric_repeat_estimate(&mut output_vec);
     }
 
     // split the fasta into chunks of size k, where k is the potential telomeric repeat length
@@ -182,12 +191,13 @@ pub mod explore {
         adjacent_indexes
     }
 
-    #[derive(Debug)]
+    #[derive(Debug, Clone)]
     pub struct TelomericRepeatExplore {
         pub start: usize,
         pub end: usize,
         pub count: i32,
         pub sequence: String,
+        pub sequence_len: usize,
     }
 
     // inital data generation, using the indexes above
@@ -237,6 +247,7 @@ pub mod explore {
                         end: end,
                         count: count,
                         sequence: adjacent_indexes[it].sequence.clone(),
+                        sequence_len: chunk_length,
                     });
                 }
 
@@ -253,6 +264,14 @@ pub mod explore {
     // string rotations of one another, yielding better summaries.
 
     // TODO: can the sequences be summarised? I.e. ID reverse complement sets.
+    // -> Option<std::io::Result<()>> {
+
+    #[derive(Debug)]
+    pub struct FormatTelomericRepeat {
+        sequence: String,
+        count: i32,
+        sequence_len: usize,
+    }
 
     fn merge_rotated_repeats<T: std::io::Write>(
         data: Vec<TelomericRepeatExplore>,
@@ -262,7 +281,9 @@ pub mod explore {
         file: &mut LineWriter<T>,
         seq_len: usize,
         dist_from_chromosome_end: usize,
-    ) -> Option<std::io::Result<()>> {
+    ) -> Option<Vec<FormatTelomericRepeat>> {
+        let mut output_vec: Vec<FormatTelomericRepeat> = Vec::new();
+
         if data.is_empty() {
             println!(
                 "[-]\tChromosome {}: No consecutive repeats of length {} were identified.",
@@ -293,10 +314,15 @@ pub mod explore {
                             id, start, end, count, data[it].sequence, chunk_length
                         )
                         .unwrap_or_else(|_| println!("[-]\tError in writing to file."));
+                        output_vec.push(FormatTelomericRepeat {
+                            sequence: data[it].sequence.clone(),
+                            count: count,
+                            sequence_len: chunk_length,
+                        });
                     }
                 }
                 // this seems weird, fix this?
-                break Some(Ok(()));
+                break Some(output_vec);
             }
             // if consecutive sequences are rotations
             if utils::string_rotation(&data[it].sequence, &data[it + 1].sequence) {
@@ -314,6 +340,11 @@ pub mod explore {
                             id, start, end, count, data[it].sequence, chunk_length
                         )
                         .unwrap_or_else(|_| println!("[-]\tError in writing to file."));
+                        output_vec.push(FormatTelomericRepeat {
+                            sequence: data[it].sequence.clone(),
+                            count: count,
+                            sequence_len: chunk_length,
+                        });
                     }
                 }
                 it += 1;
@@ -321,5 +352,75 @@ pub mod explore {
                 count = data[it].count;
             }
         }
+    }
+
+    fn get_single_telomeric_repeat_estimate(telomeric_repeats: &mut Vec<FormatTelomericRepeat>) {
+        if telomeric_repeats.is_empty() {
+            println!("[-]\tNo potential telomeric repeats found.");
+            return;
+        }
+        // sort the sequence, then by sequence length
+        // these sort in place
+        // make from here downwards into a function
+        telomeric_repeats.sort_by(|d1, d2| d1.sequence.cmp(&d2.sequence));
+        telomeric_repeats.sort_by(|d1, d2| d2.sequence_len.cmp(&d1.sequence_len));
+
+        // keep track of iterations (only incremented when a string rotation NOT matched...)
+        let mut it = 0;
+        // keep track of the lengths of the telomeric_repeats vec over its lifetime.
+        let mut len_vec = Vec::new();
+
+        // now loop
+        loop {
+            // create a vector of lengths of the telomeric repeats
+            // as if all goes well, elements are removed.
+            len_vec.push(telomeric_repeats.len());
+            // we only increment the iteration if a string rotation is found
+            // if the iteration reaches the length of the reduced telomeric repeats
+            if it == telomeric_repeats.len() - 1 {
+                // i.e. sort and go back to start...
+                it = 0;
+                telomeric_repeats.sort_by(|d1, d2| {
+                    d2.sequence_len
+                        .cmp(&d1.sequence_len)
+                        .then(d2.count.cmp(&d1.count))
+                        .then(d1.sequence.cmp(&d2.sequence))
+                });
+                // if we are left with onlyone element, this is the best case scenario
+                // so break!
+                if telomeric_repeats.len() == 1 {
+                    break;
+                }
+                // if we get to the situation where in the length vector, the last two elements
+                // have the same length, there is not going to be a more optimal solution.
+                // so break!
+                if len_vec.len() > 2 {
+                    if len_vec[len_vec.len() - 1] == len_vec[len_vec.len() - 2] {
+                        break;
+                    }
+                }
+            }
+
+            if utils::string_rotation(
+                &telomeric_repeats[it].sequence,
+                &telomeric_repeats[it + 1].sequence,
+            ) || utils::string_rotation(
+                &utils::reverse_complement(&telomeric_repeats[it].sequence),
+                &telomeric_repeats[it + 1].sequence,
+            ) {
+                telomeric_repeats[it].count =
+                    telomeric_repeats[it].count + telomeric_repeats[it + 1].count;
+                telomeric_repeats.remove(it + 1);
+            } else {
+                it += 1;
+            }
+        }
+        // take the max count and then report the sequence
+        let max = telomeric_repeats.iter().max_by_key(|i| i.count);
+        // is this unwrap safe?
+        println!(
+            "[+]\tThe likely telomeric repeat is: {}",
+            utils::format_telomeric_repeat(max.unwrap().sequence.clone())
+        )
     }
 }
