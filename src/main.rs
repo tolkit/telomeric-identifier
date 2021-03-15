@@ -72,7 +72,6 @@ fn main() {
                         .required(true)
                         .help("The input fasta file."),
                 )
-                // maybe we can have default as 6-8?
                 .arg(
                     Arg::with_name("length")
                         .short("l")
@@ -127,6 +126,16 @@ fn main() {
                         .default_value("tidk-explore")
                         .help("Output filename for the CSVs (without extension)."),
                 )
+                .arg(
+                    Arg::with_name("extension")
+                        .short("e")
+                        .long("extension")
+                        .takes_value(true)
+                        .required_unless("print")
+                        .default_value("csv")
+                        .possible_values(&["csv", "bedgraph"])
+                        .help("The extension, defining the output type of the file."),
+                )
         )
         .subcommand(
             clap::SubCommand::with_name("search")
@@ -165,6 +174,16 @@ fn main() {
                         .default_value("tidk-search")
                         .help("Output filename for the CSVs (without extension)."),
                 )
+                .arg(
+                    Arg::with_name("extension")
+                        .short("e")
+                        .long("extension")
+                        .takes_value(true)
+                        .required_unless("print")
+                        .default_value("csv")
+                        .possible_values(&["csv", "bedgraph"])
+                        .help("The extension, defining the output type of the file."),
+                )
         )
         .subcommand(
             clap::SubCommand::with_name("plot")
@@ -195,6 +214,15 @@ fn main() {
                         .required(false)
                         .default_value("200")
                         .help("The height of subplots (px)."),
+                )
+                .arg(
+                    Arg::with_name("sort")
+                        .short("s")
+                        .long("sort")
+                        .takes_value(true)
+                        .required(false)
+                        .default_value("false")
+                        .help("Sort the chromosomes by lexicographic ordering of chromosome names?"),
                 )
                 .arg(
                     Arg::with_name("width")

@@ -34,6 +34,8 @@ pub mod explore {
 
         let threshold = value_t!(matches.value_of("threshold"), i32).unwrap_or_else(|e| e.exit());
         let output = matches.value_of("output").unwrap();
+        let extension =
+            value_t!(matches.value_of("extension"), String).unwrap_or_else(|e| e.exit());
 
         let dist_from_chromosome_end =
             value_t!(matches.value_of("distance"), usize).unwrap_or_else(|e| e.exit());
@@ -44,16 +46,21 @@ pub mod explore {
         }
 
         // create file
-        let file_name = format!("./explore/{}{}", output, "_telomeric_locations.csv");
+        let file_name = format!(
+            "./explore/{}{}{}",
+            output, "_telomeric_locations.", extension
+        );
         let explore_file = File::create(&file_name).unwrap();
         let mut explore_file = LineWriter::new(explore_file);
 
         // add headers
-        writeln!(
-            explore_file,
-            "id,start_pos,end_pos,repeat_number,repeat_sequence,sequence_length"
-        )
-        .unwrap_or_else(|_| println!("[-]\tError in writing to file."));
+        if extension == "csv" {
+            writeln!(
+                explore_file,
+                "id,start_pos,end_pos,repeat_number,repeat_sequence,sequence_length"
+            )
+            .unwrap_or_else(|_| println!("[-]\tError in writing to file."));
+        }
 
         // to report the telomeres...
         let mut output_vec: Vec<FormatTelomericRepeat> = Vec::new();
@@ -82,6 +89,7 @@ pub mod explore {
                         &mut explore_file,
                         seq_len,
                         dist_from_chromosome_end,
+                        &extension,
                     )
                     .unwrap_or(vec![]),
                 );
@@ -118,6 +126,7 @@ pub mod explore {
                             &mut explore_file,
                             seq_len,
                             dist_from_chromosome_end,
+                            &extension,
                         )
                         .unwrap_or(vec![]),
                     );
@@ -281,9 +290,11 @@ pub mod explore {
         file: &mut LineWriter<T>,
         seq_len: usize,
         dist_from_chromosome_end: usize,
+        extension: &str,
     ) -> Option<Vec<FormatTelomericRepeat>> {
         let mut output_vec: Vec<FormatTelomericRepeat> = Vec::new();
 
+        // check for absence of data in the vector
         if data.is_empty() {
             println!(
                 "[-]\tChromosome {}: No consecutive repeats of length {} were identified.",
@@ -292,9 +303,13 @@ pub mod explore {
             return None;
         }
 
+        // keep track of iterations
         let mut it = 0;
+        // initiate count as the count of the first element
         let mut count = data[0].count;
+        // increment this only when no more string rotations are found
         let mut start_index = 0;
+        // start and end chromosome positions of aggregated repeats.
         let mut start;
         let mut end;
 
@@ -308,12 +323,23 @@ pub mod explore {
                 if count > threshold {
                     if start < dist_from_chromosome_end || end > seq_len - dist_from_chromosome_end
                     {
-                        writeln!(
-                            file,
-                            "{},{},{},{},{},{}",
-                            id, start, end, count, data[it].sequence, chunk_length
-                        )
-                        .unwrap_or_else(|_| println!("[-]\tError in writing to file."));
+                        if extension == "csv" {
+                            writeln!(
+                                file,
+                                "{},{},{},{},{},{}",
+                                id, start, end, count, data[it].sequence, chunk_length
+                            )
+                            .unwrap_or_else(|_| println!("[-]\tError in writing to file."));
+                        } else {
+                            writeln!(
+                                file,
+                                "{}\t{}\t{}\t{}-{}",
+                                id, start, end, count, data[it].sequence
+                            )
+                            .unwrap_or_else(|_| println!("[-]\tError in writing to file."));
+                        }
+
+                        // and collect for guessing telomeric repeat
                         output_vec.push(FormatTelomericRepeat {
                             sequence: data[it].sequence.clone(),
                             count: count,
@@ -321,7 +347,6 @@ pub mod explore {
                         });
                     }
                 }
-                // this seems weird, fix this?
                 break Some(output_vec);
             }
             // if consecutive sequences are rotations
@@ -334,12 +359,25 @@ pub mod explore {
                 if count > threshold {
                     if start < dist_from_chromosome_end || end > seq_len - dist_from_chromosome_end
                     {
-                        writeln!(
-                            file,
-                            "{},{},{},{},{},{}",
-                            id, start, end, count, data[it].sequence, chunk_length
-                        )
-                        .unwrap_or_else(|_| println!("[-]\tError in writing to file."));
+                        if extension == "csv" {
+                            writeln!(
+                                file,
+                                "{},{},{},{},{},{}",
+                                id, start, end, count, data[it].sequence, chunk_length
+                            )
+                            .unwrap_or_else(|_| println!("[-]\tError in writing to file."));
+                        } else {
+                            // I think keeping the sequence here is important for filtering?
+                            // maybe? Or maybe this actually is not useful in bedgraph format...
+                            writeln!(
+                                file,
+                                "{}\t{}\t{}\t{}-{}",
+                                id, start, end, count, data[it].sequence
+                            )
+                            .unwrap_or_else(|_| println!("[-]\tError in writing to file."));
+                        }
+
+                        // and collect for guessing telomeric repeat
                         output_vec.push(FormatTelomericRepeat {
                             sequence: data[it].sequence.clone(),
                             count: count,
@@ -366,9 +404,9 @@ pub mod explore {
             println!("[-]\tNo potential telomeric repeats found.");
             return;
         }
+        // are these the best ways to sort..?
         // sort the sequence, then by sequence length
         // these sort in place
-        // make from here downwards into a function
         telomeric_repeats.sort_by(|d1, d2| d1.sequence.cmp(&d2.sequence));
         telomeric_repeats.sort_by(|d1, d2| d2.sequence_len.cmp(&d1.sequence_len));
 

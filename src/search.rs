@@ -17,6 +17,8 @@ pub mod search {
 
         let telomeric_repeat =
             value_t!(matches.value_of("string"), String).unwrap_or_else(|e| e.exit());
+        let extension =
+            value_t!(matches.value_of("extension"), String).unwrap_or_else(|e| e.exit());
 
         println!(
             "[+]\tSearching genome for telomeric repeat: {}",
@@ -31,15 +33,21 @@ pub mod search {
             println!("[-]\tCreate directory error: {}", e.to_string());
         }
         // create file
-        let file_name = format!("./search/{}{}", output, "_telomeric_repeat_windows.csv");
+        let file_name = format!(
+            "./search/{}{}{}",
+            output, "_telomeric_repeat_windows.", extension
+        );
         let search_file = File::create(&file_name).unwrap();
         let mut search_file = LineWriter::new(search_file);
-        // add headers
-        writeln!(
-            search_file,
-            "id,window,forward_repeat_number,reverse_repeat_number,telomeric_repeat"
-        )
-        .unwrap_or_else(|_| println!("[-]\tError in writing to file."));
+
+        // add headers if extension/file type is a csv
+        if extension == "csv" {
+            writeln!(
+                search_file,
+                "id,window,forward_repeat_number,reverse_repeat_number,telomeric_repeat"
+            )
+            .unwrap_or_else(|_| println!("[-]\tError in writing to file."));
+        }
 
         // iterate over the fasta records
         for result in reader.records() {
@@ -53,6 +61,7 @@ pub mod search {
                 &telomeric_repeat,
                 window_size,
                 id.clone(),
+                &extension,
             )
             .expect("[-]\tCould not write to file.");
 
@@ -70,6 +79,7 @@ pub mod search {
         telomeric_repeat: &str,
         window_size: usize,
         id: String,
+        extension: &str,
     ) -> std::io::Result<()> {
         // get forward and reverse sequences, and length
         // to remove overlapping matches.
@@ -100,16 +110,29 @@ pub mod search {
             let forward_repeat_number = forward_motif_noverlap.len();
             let reverse_repeat_number = reverse_motif_noverlap.len();
             // write to file
-            writeln!(
-                file,
-                "{},{},{},{},{}",
-                id,
-                window_index,
-                forward_repeat_number,
-                reverse_repeat_number,
-                forward_telomeric_seq
-            )
-            .unwrap_or_else(|_| println!("[-]\tError in writing to file."));
+            if extension == "csv" {
+                writeln!(
+                    file,
+                    "{},{},{},{},{}",
+                    id,
+                    window_index,
+                    forward_repeat_number,
+                    reverse_repeat_number,
+                    forward_telomeric_seq
+                )
+                .unwrap_or_else(|_| println!("[-]\tError in writing to file."));
+            } else {
+                // for bedgraph only four columns, and sum the forward & reverse for convenience
+                writeln!(
+                    file,
+                    "{}\t{}\t{}\t{}",
+                    id,
+                    window_index - window_size,
+                    window_index,
+                    forward_repeat_number + reverse_repeat_number,
+                )
+                .unwrap_or_else(|_| println!("[-]\tError in writing to file."));
+            }
             // increment window
             window_index += window_size;
         }
