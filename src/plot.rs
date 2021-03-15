@@ -23,9 +23,12 @@ pub mod plot {
         let height_subplot = value_t!(matches.value_of("height"), i32).unwrap_or_else(|e| e.exit());
         let width = value_t!(matches.value_of("width"), i32).unwrap_or_else(|e| e.exit());
         let output = matches.value_of("output").unwrap();
+        // sorts chromosomes lexicographically
+        // better way of doing this?
+        let sort = value_t!(matches.value_of("sort"), bool).unwrap_or_else(|e| e.exit());
 
         // parse the csv
-        let parsed_csv = parse_csv(csv);
+        let parsed_csv = parse_csv(csv, sort);
 
         // calculate the number of chromosomes to plot with the length cutoff
         let chromosome_number = chromosome_number(&parsed_csv, chromosome_cutoff);
@@ -85,12 +88,15 @@ pub mod plot {
 
     // this parses the csv into a Vec of Telomeric Repeat Records
 
-    fn parse_csv(path: &str) -> Vec<TelomericRepeatRecord> {
+    fn parse_csv(path: &str, sort: bool) -> Vec<TelomericRepeatRecord> {
         let mut csv_reader = ReaderBuilder::new().from_path(path).unwrap();
         let mut plot_coords_vec = Vec::new();
         for result in csv_reader.deserialize() {
             let record: TelomericRepeatRecord = result.unwrap();
             plot_coords_vec.push(record);
+        }
+        if sort {
+            plot_coords_vec.sort_unstable_by_key(|d| d.id.clone());
         }
         plot_coords_vec
     }
