@@ -23,6 +23,8 @@ pub mod explore {
     // I am not sure this will be as effective a tool on raw reads, but this remains
     // to be tested.
 
+    // add output file for telomeric repeat estimate!!
+
     pub fn explore(matches: &clap::ArgMatches) {
         // parse arguments from main
         let input_fasta = matches.value_of("fasta").unwrap();
@@ -53,6 +55,10 @@ pub mod explore {
         let explore_file = File::create(&file_name).unwrap();
         let mut explore_file = LineWriter::new(explore_file);
 
+        let putative_telomeric_file = format!("./explore/{}{}", output, ".fasta");
+        let putative_telomeric_file_fasta = File::create(&putative_telomeric_file).unwrap();
+        let mut putative_telomeric_file_fasta = LineWriter::new(putative_telomeric_file_fasta);
+
         // add headers
         if extension == "csv" {
             writeln!(
@@ -61,6 +67,14 @@ pub mod explore {
             )
             .unwrap_or_else(|_| println!("[-]\tError in writing to file."));
         }
+
+        // add header to fasta file
+        writeln!(
+            putative_telomeric_file_fasta,
+            ">tidk-explore-output-{}",
+            output
+        )
+        .unwrap_or_else(|_| println!("[-]\tError in writing to file."));
 
         // to report the telomeres...
         let mut output_vec: Vec<FormatTelomericRepeat> = Vec::new();
@@ -137,7 +151,7 @@ pub mod explore {
         }
         println!("[+]\tFinished searching genome");
         // print likely telomeric repeat
-        get_single_telomeric_repeat_estimate(&mut output_vec);
+        get_single_telomeric_repeat_estimate(&mut output_vec, &mut putative_telomeric_file_fasta);
     }
 
     // split the fasta into chunks of size k, where k is the potential telomeric repeat length
@@ -399,7 +413,10 @@ pub mod explore {
     // the algorithm here sorts the vector of formatted telomeric repeats by the sequence and their
     // length, then loops over this structure.
 
-    fn get_single_telomeric_repeat_estimate(telomeric_repeats: &mut Vec<FormatTelomericRepeat>) {
+    fn get_single_telomeric_repeat_estimate<T: std::io::Write>(
+        telomeric_repeats: &mut Vec<FormatTelomericRepeat>,
+        putative_telomeric_file_fasta: &mut LineWriter<T>,
+    ) {
         if telomeric_repeats.is_empty() {
             println!("[-]\tNo potential telomeric repeats found.");
             return;
@@ -463,10 +480,18 @@ pub mod explore {
         }
         // take the max count and then report the sequence
         let max = telomeric_repeats.iter().max_by_key(|i| i.count);
+        let formatted_potential_telomeric_repeat =
+            utils::format_telomeric_repeat(max.unwrap().sequence.clone());
         // is this unwrap safe?
         println!(
             "[+]\tThe likely telomeric repeat is: {}",
-            utils::format_telomeric_repeat(max.unwrap().sequence.clone())
+            formatted_potential_telomeric_repeat
+        );
+        writeln!(
+            putative_telomeric_file_fasta,
+            "{}",
+            formatted_potential_telomeric_repeat
         )
+        .unwrap_or_else(|_| println!("[-]\tError in writing to file."));
     }
 }
