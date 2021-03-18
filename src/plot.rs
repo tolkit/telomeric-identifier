@@ -150,7 +150,12 @@ pub mod plot {
         height: i32,
         width: i32,
         height_per_plot: i32,
-    ) -> String {
+    ) -> Option<String> {
+        // need this here...
+        if path_vec.is_empty() {
+            return None;
+        }
+
         // somehow going to have to scale the lines to fit on all graphs
         let mut path = String::new();
         let width_incl_margins = width - MARGIN;
@@ -166,6 +171,7 @@ pub mod plot {
             // min is again zero (no negative repeats), max is greatest repeats per chromosome
             height as f64
                 - scale_y(
+                    // bug here. need to check whether path vec is empty?
                     path_vec[0].1 as f64,
                     0.0,
                     height_per_plot as f64,
@@ -191,7 +197,7 @@ pub mod plot {
             );
             bin += x_bin;
         }
-        path
+        Some(path)
     }
 
     // add the path elements from Vec<PlotData.path> to their SVG tags
@@ -200,6 +206,8 @@ pub mod plot {
 
     fn add_all_path_elements(plot_data: Vec<PlotData>, height_subplot: isize) -> String {
         let mut all_paths = String::new();
+        let length = plot_data.len();
+        // chromosome labels WRONG as they are being labelled from the top down, rather than the bottom up.
         for (i, row) in plot_data.iter().enumerate() {
             // add text tag here
             all_paths += &format!(
@@ -208,7 +216,8 @@ pub mod plot {
                 (1 + i as isize * height_subplot) + 55,
                 row.id
             );
-            all_paths += &format!("<path d='{}' class='chromosome_line' stroke='black' fill='none' stroke-width='1' transform='translate(0,{})'/>\n", row.path, i as isize * -height_subplot);
+            // reverse the order of the paths!
+            all_paths += &format!("<path d='{}' class='chromosome_line' stroke='black' fill='none' stroke-width='1' transform='translate(0,{})'/>\n", plot_data[length - i - 1].path, i as isize * -height_subplot);
         }
         all_paths
     }
@@ -230,6 +239,7 @@ pub mod plot {
     // loop through the parsed CSV file
     // calculate SVG path elements on the fly
     // along with other PlotData elements
+    // FIXME: the value of
 
     fn generate_plot_data(
         parsed_csv: Vec<TelomericRepeatRecord>,
@@ -248,16 +258,23 @@ pub mod plot {
 
         loop {
             if it == file_length - 1 {
+                // there may not be a path element
+                // so explicitly make a blank if there is not.
+                let path_element = match make_path_element(
+                    path_vec.clone(),
+                    path_vec.clone().len(),
+                    y_max as usize,
+                    height,
+                    width,
+                    height_per_plot,
+                ) {
+                    Some(x) => x,
+                    None => " ".to_owned(),
+                };
+
                 plot_data.push(PlotData {
                     id: parsed_csv[it].id.clone(),
-                    path: make_path_element(
-                        path_vec.clone(),
-                        path_vec.clone().len(),
-                        y_max as usize,
-                        height,
-                        width,
-                        height_per_plot,
-                    ),
+                    path: path_element,
                     max: parsed_csv[it].window as usize,
                     sequence: parsed_csv[it].telomeric_repeat.clone(),
                 });
@@ -280,18 +297,37 @@ pub mod plot {
                 ));
                 it += 1;
             } else {
+                // want to calculate y_max and...
+                if y_max
+                    <= parsed_csv[it].forward_repeat_number + parsed_csv[it].reverse_repeat_number
+                {
+                    y_max =
+                        parsed_csv[it].forward_repeat_number + parsed_csv[it].reverse_repeat_number;
+                }
+                // the path vector for the last element (seems important for things which occur at the
+                // ends of chromosomes right..? DOH)
+                path_vec.push((
+                    parsed_csv[it].window,
+                    parsed_csv[it].forward_repeat_number + parsed_csv[it].reverse_repeat_number,
+                ));
                 // calculate the svg path element from path_vec here
+                // there may not be a path element
+                // so explicitly make a blank if there is not.
+                let path_element = match make_path_element(
+                    path_vec.clone(),
+                    path_vec.clone().len(),
+                    y_max as usize,
+                    height,
+                    width,
+                    height_per_plot,
+                ) {
+                    Some(x) => x,
+                    None => " ".to_owned(),
+                };
 
                 plot_data.push(PlotData {
                     id: parsed_csv[it].id.clone(),
-                    path: make_path_element(
-                        path_vec.clone(),
-                        path_vec.clone().len(),
-                        y_max as usize,
-                        height,
-                        width,
-                        height_per_plot,
-                    ),
+                    path: path_element,
                     max: parsed_csv[it].window as usize,
                     sequence: parsed_csv[it].telomeric_repeat.clone(),
                 });
@@ -300,7 +336,6 @@ pub mod plot {
                 y_max = 0;
             }
         }
-
         plot_data
     }
 }

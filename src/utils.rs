@@ -151,7 +151,11 @@ pub mod utils {
             for i in c_slices {
                 indices_lens.push((i, i.len()));
             }
-            // because I know there should be at least one element, unwrap should be fine..?
+            // return early, as there are no C's
+            // prevents a panic when telomeric repeat contained only T's
+            if indices_lens.is_empty() {
+                return tr.to_string();
+            }
             let max = indices_lens.iter().max_by_key(|i| i.1).unwrap();
             // need everything up until the first C, then shove it to the end.
             let index = max.0.first().unwrap();
@@ -180,7 +184,7 @@ pub mod utils {
             if index == &tr.len() {
                 return tr.to_owned();
             } else {
-                let start = &tr[*index + 1..];
+                let start = &tr[*index..];
                 let end = &tr[..*index];
                 let res = format!("{}{}", start, end);
                 return res;
