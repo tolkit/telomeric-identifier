@@ -8,7 +8,7 @@ As with other Rust projects, you have to complile yourself. <a href="https://www
 
 `cargo build --release`
 
-Compiling takes ~2 minutes. The executable will be in `./target/release/tidk`.
+Compiling takes >6 minutes from fresh (tested on the farm). The executable will be in `./target/release/tidk`.
 
 ## Usage
 
@@ -146,8 +146,3 @@ tidk find -f fastas/ilXesXant1_1.20201023.curated_primary.fa -c lepidoptera -o X
 tidk plot -c finder/Xes_telomeric_repeat_windows.csv -o ilXes -h 120 -w 800
 ```
 <img src="./ilXes.svg">
-
-## TODO's
-
-- Implement IUPAC in `tidk search`?
-- Better summary of `tidk explore`?
