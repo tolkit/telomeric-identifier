@@ -2,6 +2,8 @@ pub mod explore {
     use crate::utils::utils;
     use bio::io::fasta;
     use clap::value_t;
+    use itertools::Itertools;
+    use std::collections::HashMap;
     use std::fs::{create_dir_all, File};
     use std::io::prelude::*;
     use std::io::LineWriter;
@@ -55,9 +57,9 @@ pub mod explore {
         let explore_file = File::create(&file_name).unwrap();
         let mut explore_file = LineWriter::new(explore_file);
 
-        let putative_telomeric_file = format!("./explore/{}{}", output, ".fasta");
-        let putative_telomeric_file_fasta = File::create(&putative_telomeric_file).unwrap();
-        let mut putative_telomeric_file_fasta = LineWriter::new(putative_telomeric_file_fasta);
+        let putative_telomeric_file = format!("./explore/{}{}", output, ".txt");
+        let putative_telomeric_file_txt = File::create(&putative_telomeric_file).unwrap();
+        let mut putative_telomeric_file_txt = LineWriter::new(putative_telomeric_file_txt);
 
         // add headers
         if extension == "csv" {
@@ -70,9 +72,8 @@ pub mod explore {
 
         // add header to fasta file
         writeln!(
-            putative_telomeric_file_fasta,
-            ">tidk-explore-output-{}",
-            output
+            putative_telomeric_file_txt,
+            "# Potential telomeric repeats and their frequency."
         )
         .unwrap_or_else(|_| println!("[-]\tError in writing to file."));
 
@@ -151,7 +152,7 @@ pub mod explore {
         }
         println!("[+]\tFinished searching genome");
         // print likely telomeric repeat
-        get_single_telomeric_repeat_estimate(&mut output_vec, &mut putative_telomeric_file_fasta);
+        get_telomeric_repeat_estimates(&mut output_vec, &mut putative_telomeric_file_txt);
     }
 
     // split the fasta into chunks of size k, where k is the potential telomeric repeat length
@@ -289,7 +290,7 @@ pub mod explore {
     // TODO: can the sequences be summarised? I.e. ID reverse complement sets.
     // -> Option<std::io::Result<()>> {
 
-    #[derive(Debug)]
+    #[derive(Debug, Clone, PartialEq, Eq, Hash)]
     pub struct FormatTelomericRepeat {
         sequence: String,
         count: i32,
@@ -410,88 +411,69 @@ pub mod explore {
     // and also potentially across different lengths, and tries to find the most likely
     // telomeric repeat. See utils::format_telomeric_repeat() for the explanation of the
     // formatting.
-    // the algorithm here sorts the vector of formatted telomeric repeats by the sequence and their
-    // length, then loops over this structure.
 
-    fn get_single_telomeric_repeat_estimate<T: std::io::Write>(
+    fn get_telomeric_repeat_estimates<T: std::io::Write>(
         telomeric_repeats: &mut Vec<FormatTelomericRepeat>,
-        putative_telomeric_file_fasta: &mut LineWriter<T>,
+        putative_telomeric_file: &mut LineWriter<T>,
     ) {
         if telomeric_repeats.is_empty() {
             println!("[-]\tNo potential telomeric repeats found.");
             return;
         }
-        // are these the best ways to sort..?
-        // sort the sequence, then by sequence length
-        // these sort in place
-        telomeric_repeats.sort_by(|d1, d2| d1.sequence.cmp(&d2.sequence));
-        telomeric_repeats.sort_by(|d1, d2| d2.sequence_len.cmp(&d1.sequence_len));
 
-        // keep track of iterations (only incremented when a string rotation NOT matched...)
-        let mut it = 0;
-        // keep track of the lengths of the telomeric_repeats vec over its lifetime.
-        let mut len_vec = Vec::new();
+        // we need to compare all elements against all others
+        let a = telomeric_repeats.clone();
+        //let b = telomeric_repeats;
+        let mut map: HashMap<String, i32> = HashMap::new();
+        // so we don't compare the same thing twice.
+        let mut tracker: Vec<usize> = Vec::new();
+        // create all combinations of indices
+        let it = (0..a.len()).combinations(2);
 
-        // now loop
-        loop {
-            // create a vector of lengths of the telomeric repeats
-            // as if all goes well, elements are removed.
-            len_vec.push(telomeric_repeats.len());
-            // we only increment the iteration if a string rotation is found
-            // if the iteration reaches the length of the reduced telomeric repeats
-            if it == telomeric_repeats.len() - 1 {
-                // i.e. sort and go back to start...
-                it = 0;
-                telomeric_repeats.sort_by(|d1, d2| {
-                    d2.sequence_len
-                        .cmp(&d1.sequence_len)
-                        .then(d2.count.cmp(&d1.count))
-                        .then(d1.sequence.cmp(&d2.sequence))
-                });
-                // if we are left with only one element, this is the best case scenario
-                // so break!
-                if telomeric_repeats.len() == 1 {
-                    break;
+        // iterate over combinations
+        for comb in it {
+            // if the combination is a string rotation (or its reverse complement)
+            // then combine
+            if utils::string_rotation(&a[comb[0]].sequence, &a[comb[1]].sequence)
+                || utils::string_rotation(
+                    &utils::reverse_complement(&a[comb[0]].sequence),
+                    &a[comb[1]].sequence,
+                )
+                || utils::string_rotation(
+                    &utils::reverse_complement(&a[comb[1]].sequence),
+                    &a[comb[0]].sequence,
+                )
+            {
+                // if comb[0] || comb[1] not in tracker...
+                // the format telomeric repeat is letting me down here...
+                if !tracker.contains(&comb[0]) && !tracker.contains(&comb[1]) {
+                    let count = map
+                        // relies on the telomeric repeat string resolving to a 'canonical'
+                        // or unique form of the string, see utils::lms()
+                        .entry(utils::lms(&a[comb[0]].sequence, &a[comb[1]].sequence))
+                        .or_insert(0);
+                    *count += a[comb[0]].count + a[comb[1]].count;
+
+                    tracker.push(comb[0]);
+                    tracker.push(comb[1]);
                 }
-                // if we get to the situation where in the length vector, the last two elements
-                // have the same length, there is not going to be a more optimal solution.
-                // so break!
-                // should the 2 be 1 here..?
-                if len_vec.len() > 2 {
-                    if len_vec[len_vec.len() - 1] == len_vec[len_vec.len() - 2] {
-                        break;
-                    }
-                }
-            }
-
-            if utils::string_rotation(
-                &telomeric_repeats[it].sequence,
-                &telomeric_repeats[it + 1].sequence,
-            ) || utils::string_rotation(
-                &utils::reverse_complement(&telomeric_repeats[it].sequence),
-                &telomeric_repeats[it + 1].sequence,
-            ) {
-                telomeric_repeats[it].count =
-                    telomeric_repeats[it].count + telomeric_repeats[it + 1].count;
-                telomeric_repeats.remove(it + 1);
-            } else {
-                it += 1;
             }
         }
-        // take the max count and then report the sequence
-        let max = telomeric_repeats.iter().max_by_key(|i| i.count);
-        let formatted_potential_telomeric_repeat =
-            utils::format_telomeric_repeat(max.unwrap().sequence.clone());
-        // is this unwrap safe?
-        println!(
-            "[+]\tThe likely telomeric repeat is: {}",
-            formatted_potential_telomeric_repeat
-        );
-        writeln!(
-            putative_telomeric_file_fasta,
-            "{}",
-            formatted_potential_telomeric_repeat
-        )
-        .unwrap_or_else(|_| println!("[-]\tError in writing to file."));
+
+        let mut count_vec: Vec<_> = map.iter().collect();
+        count_vec.sort_by(|a, b| b.1.cmp(a.1));
+
+        let mut it = 0;
+        for (seq, count) in count_vec {
+            if it == 0 {
+                println!(
+                    "[+]\tThe likely telomeric repeat is: {}, found {} times.",
+                    seq, count
+                );
+            }
+            writeln!(putative_telomeric_file, "{}\t{}", seq, count)
+                .unwrap_or_else(|_| println!("[-]\tError in writing to file."));
+            it += 1;
+        }
     }
 }
