@@ -4,6 +4,8 @@ pub mod utils {
     // of rust-bio (or hard code it here...)
     // see https://github.com/rust-bio/rust-bio/blob/master/src/pattern_matching/shift_and.rs
     use bio::pattern_matching::kmp::KMP;
+    use lexical_sort::{natural_lexical_cmp, StringSort};
+    use std::cmp::min;
 
     // this does the hard lifting in `tidk search` and `tidk find`
     // take input putative telomeric repeat (motif) and search against
@@ -93,102 +95,79 @@ pub mod utils {
         false
     }
 
-    //https://stackoverflow.com/questions/50380352/how-can-i-group-consecutive-integers-in-a-vector-in-rust
-    // group consecutive numbers in a slice into their own slice in a vec.
-    fn consecutive_slices(data: &[usize]) -> Vec<&[usize]> {
-        let mut slice_start = 0;
-        let mut result = Vec::new();
-        for i in 1..data.len() {
-            if data[i - 1] + 1 != data[i] {
-                result.push(&data[slice_start..i]);
-                slice_start = i;
+    // Booth's algorithm for the lexicographically minimal
+    // rotation of a string. Should give us a canonical rotation
+    // given a rotated string.
+    // written by https://github.com/zimpha/algorithmic-library/blob/61e897983314033615bcd278d22a754bfc3c3f22/rust/src/strings/mod.rs
+
+    fn minimal_rotation<T: Ord>(s: &[T]) -> usize {
+        let n = s.len();
+        let mut i = 0;
+        let mut j = 1;
+        loop {
+            let mut k = 0;
+            let mut ci = &s[i % n];
+            let mut cj = &s[j % n];
+            while k < n {
+                ci = &s[(i + k) % n];
+                cj = &s[(j + k) % n];
+                if ci != cj {
+                    break;
+                }
+                k += 1
+            }
+            if k == n {
+                return min(i, j);
+            }
+            if ci > cj {
+                i += k + 1;
+                i += (i == j) as usize;
+            } else {
+                j += k + 1;
+                j += (i == j) as usize;
             }
         }
-        if data.len() > 0 {
-            result.push(&data[slice_start..]);
-        }
-        result
     }
 
-    // format a putative telomeric repeat, which could be any one of
-    // several string rotations. Here I try to standardise the notation
-    // by reporting the longest consecutive string of G's as the last part
-    // of the telomeric repeat. This may be totally the wrong thing to do...
-    pub fn format_telomeric_repeat(telomeric_repeat: String) -> String {
-        // borrow to get &str
-        let tr = &telomeric_repeat;
+    // a wrapper for `minimal_rotation` which gives us a string back
+    // shoot, need to take into account reverse complement!!
+    // we have two sequences we *know* are string rotations of one another
+    // or string rotations of the reverse complement
+    // so find the lexographically minimal version of a string/its reverse complement.
 
-        // match the indices of C's and G's
-        // result is a tuple, so collect the first element (indexes) only
-        let c_m: Vec<usize> = tr.match_indices("C").map(|x| x.0).collect();
-        let g_m: Vec<usize> = tr.match_indices("G").map(|x| x.0).collect();
+    pub fn lms(telomeric_repeat1: &str, telomeric_repeat2: &str) -> String {
+        // get index of where to rotate
+        // for forward
+        let index_f = minimal_rotation(telomeric_repeat1.as_bytes());
+        let index_r = minimal_rotation(telomeric_repeat2.as_bytes());
+        // for reverse
+        let telomeric_repeat1_r = reverse_complement(telomeric_repeat1);
+        let telomeric_repeat2_r = reverse_complement(telomeric_repeat2);
+        // reverse indexes
+        let index_fr = minimal_rotation(telomeric_repeat1_r.as_bytes());
+        let index_rr = minimal_rotation(telomeric_repeat2_r.as_bytes());
 
-        // get a vec of slices of consecutive matches
-        let c_slices = consecutive_slices(&c_m);
-        let g_slices = consecutive_slices(&g_m);
+        // put 0 -> index at end
+        let end_f = &telomeric_repeat1[0..index_f];
+        let end_r = &telomeric_repeat2[0..index_r];
+        let end_fr = &telomeric_repeat1_r[0..index_fr];
+        let end_rr = &telomeric_repeat2_r[0..index_rr];
 
-        // get the lengths of each of the slices in the vec.
-        let c_slices_lens: Vec<_> = c_slices.iter().map(|e| e.len()).collect();
-        let g_slices_lens: Vec<_> = g_slices.iter().map(|e| e.len()).collect();
+        // put index -> end at start
+        let start_f = &telomeric_repeat1[index_f..];
+        let start_r = &telomeric_repeat2[index_r..];
+        let start_fr = &telomeric_repeat1_r[index_fr..];
+        let start_rr = &telomeric_repeat2_r[index_rr..];
 
-        // now get the maximum length from each vec, as this will
-        // determine what to do next.
-        let max_cs_lens = match c_slices_lens.iter().max() {
-            Some(x) => x,
-            None => &0usize,
-        };
-        let max_gs_lens = match g_slices_lens.iter().max() {
-            Some(x) => x,
-            None => &0usize,
-        };
+        // give us the string
+        let lms_f = format!("{}{}", start_f, end_f);
+        let lms_r = format!("{}{}", start_r, end_r);
+        let lms_fr = format!("{}{}", start_fr, end_fr);
+        let lms_rr = format!("{}{}", start_rr, end_rr);
 
-        // if there are no G's or the C's outnumber the G's,
-        // put the C's to the start and take the reverse complement.
-        // and of course, the alternate arm requires the opposite conditions.
-        if max_gs_lens == &0usize || max_cs_lens > max_gs_lens {
-            // means we want the revcomp of this string, so put C's at the start of the string.
-            let mut indices_lens = Vec::new();
-            for i in c_slices {
-                indices_lens.push((i, i.len()));
-            }
-            // return early, as there are no C's
-            // prevents a panic when telomeric repeat contained only T's
-            if indices_lens.is_empty() {
-                return tr.to_string();
-            }
-            let max = indices_lens.iter().max_by_key(|i| i.1).unwrap();
-            // need everything up until the first C, then shove it to the end.
-            let index = max.0.first().unwrap();
-            // if the index is at the start, we don't need to shuffle the string
-            // is zero right or &0usize?
-            if index == &0usize {
-                return reverse_complement(tr);
-            } else {
-                let start = &tr[*index..];
-                let end = &tr[..*index];
-                let res = format!("{}{}", start, end);
-                return reverse_complement(&res);
-            }
-        } else {
-            // means G's go at the end of the string
-            // means we want the revcomp of this string, so put C's at the start of the string.
-            let mut indices_lens = Vec::new();
-            for i in g_slices {
-                indices_lens.push((i, i.len()));
-            }
-            // because I know there should be at least one element, unwrap should be fine..?
-            let max = indices_lens.iter().max_by_key(|i| i.1).unwrap();
-            // need everything up until the first C, then shove it to the end.
-            let index = max.0.last().unwrap();
-            // if the index is at the start, we don't need to shuffle the string
-            if index == &tr.len() {
-                return tr.to_owned();
-            } else {
-                let start = &tr[*index..];
-                let end = &tr[..*index];
-                let res = format!("{}{}", start, end);
-                return res;
-            }
-        }
+        // now we have four strings, and have to report one
+        let mut strings = vec![&lms_f, &lms_r, &lms_fr, &lms_rr];
+        strings.string_sort_unstable(natural_lexical_cmp);
+        strings[0].to_string()
     }
 }
