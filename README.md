@@ -8,14 +8,14 @@ As with other Rust projects, you have to complile yourself. <a href="https://www
 
 `cargo build --release`
 
-Compiling takes >6 minutes from fresh (tested on the farm). The executable will be in `./target/release/tidk`.
+Compiling takes anywhere from 1-6 minutes from fresh (tested on the farm). The executable will be at the location `./target/release/tidk`.
 
 ## Usage
 
 ### Overall
 
 ```
-TIDK 0.1.3
+TIDK 0.1.4
 Max Brown <mb39@sanger.ac.uk>
 A Telomere Identification Toolkit.
 
@@ -37,7 +37,9 @@ SUBCOMMANDS:
 
 ### Explore 
 
-`tidk explore` will identify all sequences of length k, which repeat at least twice throughout a genome. Repeats of high number toward the beginning or end of sequences are likely candidates for telomeric repeats. The longest run of G's seems to be at the end of the canonical telomeric repeat unit.
+`tidk explore` will identify all sequences of length k, which repeat at least twice throughout a genome. Repeats of high number toward the beginning or end of sequences are likely candidates for telomeric repeats. The reported repeats are the lexicographically most minimal of all possible string rotations of the telomeric repeat, in both forward and reverse complement forms.
+
+It outputs either a csv or bedgraph of potential telomeric repeats and their locations, in addition to a text file of the potential telomeric repeat sequences, and how often they are found in the genome.
 
 For example:
 `tidk explore --fasta fastas/iyBomHort1_1.20210303.curated_primary.fa --minimum 5 --maximum 12 -o test_dist -t 500` searches the genome for repeats from length 5 to length 12 sequentially (definite potential to be made concurrent) on the freshly minted <a href="https://www.ebi.ac.uk/ena/browser/view/PRJEB43539"><i>Bombus hortorum</i> genome</a>.
@@ -47,7 +49,7 @@ tidk-explore
 Use a search of all substrings of length k to query a genome for a telomere sequence.
 
 USAGE:
-    tidk explore [OPTIONS] --fasta <fasta> --length <length> --maximum <maximum> --minimum <minimum>
+    tidk explore [OPTIONS] --extension <extension> --fasta <fasta> --length <length> --maximum <maximum> --minimum <minimum>
 
 FLAGS:
     -h, --help       Prints help information
@@ -56,6 +58,8 @@ FLAGS:
 OPTIONS:
     -d, --distance <distance>      The distance in base pairs from the beginning or end of a chromosome, to report
                                    potential telomeric repeats in. [default: 150000]
+    -e, --extension <extension>    The extension, defining the output type of the file. [default: csv]  [possible
+                                   values: csv, bedgraph]
     -f, --fasta <fasta>            The input fasta file.
     -l, --length <length>          Length of substring.
     -x, --maximum <maximum>        Maximum length of substring. [default: 12]
@@ -67,7 +71,7 @@ OPTIONS:
 
 ### Find
 
-`tidk find` will take an input clade, and match the known telomeric repeat for that clade (or repeats plural) and search the genome. Uses the <a href="http://telomerase.asu.edu/sequences_telomere.html">telomeric repeat database</a>. As more telomeric repeats are found and added, perhaps there is a more elegant way to parse the command line input.
+`tidk find` will take an input clade, and match the known telomeric repeat for that clade (or repeats plural) and search the genome. Uses the <a href="http://telomerase.asu.edu/sequences_telomere.html">telomeric repeat database</a>. As more telomeric repeats are found and added, the dictionary of sequences used will increase (perhaps there is a more elegant way to parse the command line input?).
 
 ```
 tidk-find
@@ -100,17 +104,19 @@ tidk-search
 Search the input genome with a specific telomeric repeat search string.
 
 USAGE:
-    tidk search [OPTIONS] --fasta <fasta> --string <string>
+    tidk search [OPTIONS] --extension <extension> --fasta <fasta> --string <string>
 
 FLAGS:
     -h, --help       Prints help information
     -V, --version    Prints version information
 
 OPTIONS:
-    -f, --fasta <fasta>      The input fasta file.
-    -o, --output <output>    Output filename for the CSVs (without extension). [default: tidk-search]
-    -s, --string <string>    Supply a DNA string to query the genome with.
-    -w, --window <window>    Window size to calculate telomeric repeat counts in. [default: 10000]
+    -e, --extension <extension>    The extension, defining the output type of the file. [default: csv]  [possible
+                                   values: csv, bedgraph]
+    -f, --fasta <fasta>            The input fasta file.
+    -o, --output <output>          Output filename for the CSVs (without extension). [default: tidk-search]
+    -s, --string <string>          Supply a DNA string to query the genome with.
+    -w, --window <window>          Window size to calculate telomeric repeat counts in. [default: 10000]
 ```
 
 ### Plot
