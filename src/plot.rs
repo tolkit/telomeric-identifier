@@ -96,7 +96,8 @@ pub mod plot {
             plot_coords_vec.push(record);
         }
         if sort {
-            plot_coords_vec.sort_unstable_by_key(|d| d.id.clone());
+            // I dont think this works
+            //plot_coords_vec.sort_unstable_by_key(|d| d.id.clone());
         }
         plot_coords_vec
     }

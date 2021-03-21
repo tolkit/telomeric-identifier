@@ -130,7 +130,6 @@ pub mod utils {
     }
 
     // a wrapper for `minimal_rotation` which gives us a string back
-    // shoot, need to take into account reverse complement!!
     // we have two sequences we *know* are string rotations of one another
     // or string rotations of the reverse complement
     // so find the lexographically minimal version of a string/its reverse complement.

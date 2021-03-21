@@ -70,10 +70,10 @@ pub mod explore {
             .unwrap_or_else(|_| println!("[-]\tError in writing to file."));
         }
 
-        // add header to fasta file
+        // add header to txt file
         writeln!(
             putative_telomeric_file_txt,
-            "# Potential telomeric repeats and their frequency."
+            "# Potential telomeric repeats and their frequency.\n# Telomeric repeat, reverse complement, frequency."
         )
         .unwrap_or_else(|_| println!("[-]\tError in writing to file."));
 
@@ -422,37 +422,40 @@ pub mod explore {
         }
 
         // we need to compare all elements against all others
-        let a = telomeric_repeats.clone();
-        //let b = telomeric_repeats;
         let mut map: HashMap<String, i32> = HashMap::new();
         // so we don't compare the same thing twice.
         let mut tracker: Vec<usize> = Vec::new();
         // create all combinations of indices
-        let it = (0..a.len()).combinations(2);
+        let it = (0..telomeric_repeats.len()).combinations(2);
 
         // iterate over combinations
         for comb in it {
             // if the combination is a string rotation (or its reverse complement)
             // then combine
-            if utils::string_rotation(&a[comb[0]].sequence, &a[comb[1]].sequence)
-                || utils::string_rotation(
-                    &utils::reverse_complement(&a[comb[0]].sequence),
-                    &a[comb[1]].sequence,
-                )
-                || utils::string_rotation(
-                    &utils::reverse_complement(&a[comb[1]].sequence),
-                    &a[comb[0]].sequence,
-                )
-            {
+            if utils::string_rotation(
+                &telomeric_repeats[comb[0]].sequence,
+                &telomeric_repeats[comb[1]].sequence,
+            ) || utils::string_rotation(
+                &utils::reverse_complement(&telomeric_repeats[comb[0]].sequence),
+                &telomeric_repeats[comb[1]].sequence,
+            ) || utils::string_rotation(
+                &utils::reverse_complement(&telomeric_repeats[comb[1]].sequence),
+                &telomeric_repeats[comb[0]].sequence,
+            ) {
                 // if comb[0] || comb[1] not in tracker...
                 // the format telomeric repeat is letting me down here...
                 if !tracker.contains(&comb[0]) && !tracker.contains(&comb[1]) {
                     let count = map
                         // relies on the telomeric repeat string resolving to a 'canonical'
                         // or unique form of the string, see utils::lms()
-                        .entry(utils::lms(&a[comb[0]].sequence, &a[comb[1]].sequence))
-                        .or_insert(0);
-                    *count += a[comb[0]].count + a[comb[1]].count;
+                        .entry(utils::lms(
+                            &telomeric_repeats[comb[0]].sequence,
+                            &telomeric_repeats[comb[1]].sequence,
+                        ))
+                        .or_insert(
+                            telomeric_repeats[comb[0]].count + telomeric_repeats[comb[1]].count,
+                        );
+                    *count += telomeric_repeats[comb[0]].count + telomeric_repeats[comb[1]].count;
 
                     tracker.push(comb[0]);
                     tracker.push(comb[1]);
@@ -471,8 +474,14 @@ pub mod explore {
                     seq, count
                 );
             }
-            writeln!(putative_telomeric_file, "{}\t{}", seq, count)
-                .unwrap_or_else(|_| println!("[-]\tError in writing to file."));
+            writeln!(
+                putative_telomeric_file,
+                "{}\t{}\t{}",
+                seq,
+                utils::reverse_complement(seq),
+                count
+            )
+            .unwrap_or_else(|_| println!("[-]\tError in writing to file."));
             it += 1;
         }
     }
