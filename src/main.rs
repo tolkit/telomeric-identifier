@@ -9,6 +9,7 @@ use tidk::explore::explore;
 use tidk::finder::finder;
 use tidk::plot::plot;
 use tidk::search::search;
+use tidk::trim::trim;
 
 fn main() {
     // command line options
@@ -186,6 +187,53 @@ fn main() {
                 )
         )
         .subcommand(
+            clap::SubCommand::with_name("trim")
+                .about("Trim a specific telomeric repeat from the input reads and yield reads oriented at the telomere start.")
+                .arg(
+                    Arg::with_name("fasta")
+                        .short("f")
+                        .long("fasta")
+                        .takes_value(true)
+                        .required(true)
+                        .help("The input fasta file."),
+                )
+                .arg(
+                    Arg::with_name("string")
+                        .short("s")
+                        .long("string")
+                        .takes_value(true)
+                        .required(true)
+                        .help("Supply a DNA string to trim the reads with."),
+                )
+                .arg(
+                    Arg::with_name("min_len")
+                        .short("l")
+                        .long("min_len")
+                        .takes_value(true)
+                        .required(false)
+                        .default_value("1000")
+                        .help("Minimum length of trimmed reads."),
+                )
+                .arg(
+                    Arg::with_name("output")
+                        .short("o")
+                        .long("output")
+                        .takes_value(true)
+                        .required(false)
+                        .default_value("tidk-search")
+                        .help("Output filename for the CSVs (without extension)."),
+                )
+                .arg(
+                    Arg::with_name("min_occur")
+                        .short("m")
+                        .long("min_occur")
+                        .takes_value(true)
+                        .required(false)
+                        .default_value("3")
+                        .help("Number of contiguous occurrences of telomeric repeat to start trimming."),
+                )
+        )
+        .subcommand(
             clap::SubCommand::with_name("plot")
                 .about("SVG plot of CSV generated from search or find.")
                 // output file name
@@ -259,6 +307,10 @@ fn main() {
         "search" => {
             let matches = subcommand.1.unwrap();
             search::search(matches);
+        }
+        "trim" => {
+            let matches = subcommand.1.unwrap();
+            trim::trim(matches);
         }
         "plot" => {
             let matches = subcommand.1.unwrap();
