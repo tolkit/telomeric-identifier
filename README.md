@@ -1,6 +1,6 @@
 # A Telomere Identification toolKit (tidk)
 
-Simple and fast de-novo identification of telomeric repeats (`explore`), finding frequency of a telomeric sequence by clade in windows (`find`), or a user defined sequence in windows (`search`).
+Simple and fast de-novo identification of telomeric repeats (`explore`), finding frequency of a telomeric sequence by clade in windows (`find`), or a user defined sequence in windows (`search`). Fasta sequences can also be trimmed using a supplied base repeat string (see `trim`).
 
 ## Install
 
@@ -152,3 +152,27 @@ tidk find -f fastas/ilXesXant1_1.20201023.curated_primary.fa -c lepidoptera -o X
 tidk plot -c finder/Xes_telomeric_repeat_windows.csv -o ilXes -h 120 -w 800
 ```
 <img src="./ilXes.svg">
+
+
+### Trim
+
+`tidk trim` - a rust port of https://github.com/pgonzale60/telomeric-trim. Thanks Pablo!
+
+```
+tidk-trim 
+Trim a specific telomeric repeat from the input reads and yield reads oriented at the telomere start.
+
+USAGE:
+    tidk trim [OPTIONS] --fasta <fasta> --string <string>
+
+FLAGS:
+    -h, --help       Prints help information
+    -V, --version    Prints version information
+
+OPTIONS:
+    -f, --fasta <fasta>            The input fasta file.
+    -l, --min_len <min_len>        Minimum length of trimmed reads. [default: 1000]
+    -m, --min_occur <min_occur>    Number of contiguous occurrences of telomeric repeat to start trimming. [default: 3]
+    -o, --output <output>          Output filename for the trimmed fasta output. [default: tidk-trim]
+    -s, --string <string>          Supply a DNA string to trim the reads with.
+```

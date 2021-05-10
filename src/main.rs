@@ -220,8 +220,8 @@ fn main() {
                         .long("output")
                         .takes_value(true)
                         .required(false)
-                        .default_value("tidk-search")
-                        .help("Output filename for the CSVs (without extension)."),
+                        .default_value("tidk-trim")
+                        .help("Output filename for the trimmed fasta output."),
                 )
                 .arg(
                     Arg::with_name("min_occur")
