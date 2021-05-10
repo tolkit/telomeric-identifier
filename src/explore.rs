@@ -164,6 +164,8 @@ pub mod explore {
         pub sequence: String,
     }
 
+    // is it possible to filter this iterator based on distance from chromosome end..?
+
     fn chunk_fasta(sequence: bio::io::fasta::Record, chunk_length: usize) -> Vec<ChunkedFasta> {
         let chunks = sequence.seq().chunks(chunk_length);
         let chunks_plus_one =
@@ -443,7 +445,8 @@ pub mod explore {
                 &telomeric_repeats[comb[0]].sequence,
             ) {
                 // if comb[0] || comb[1] not in tracker...
-                // the format telomeric repeat is letting me down here...
+                // as we already added the contents of the tracked telomeric repeats
+                // we do not want to count them again.
                 if !tracker.contains(&comb[0]) && !tracker.contains(&comb[1]) {
                     let count = map
                         // relies on the telomeric repeat string resolving to a 'canonical'
