@@ -3,29 +3,15 @@ pub mod explore {
     use bio::io::fasta;
     use clap::value_t;
     use itertools::Itertools;
+    use rayon::prelude::*;
     use std::collections::HashMap;
     use std::fs::{create_dir_all, File};
     use std::io::prelude::*;
     use std::io::LineWriter;
     use std::str;
+    use std::sync::mpsc::channel;
 
-    // split the fasta sequence into chunks
-    // while the ith and i + 1 chunk are the same, push tuple to a vector
-    // if this count is less than x discard
-
-    // the main useful data structure is:
-    // (start, end, count, sequence)
-
-    // the entry function called from main
-    // iterates over the fasta file and calls the functions below.
-    // I think it could be in general condensed, there seems to be some redundancy.
-
-    // this should identify the telomeric repeat as reverse complement at either
-    // end of a chromosome
-    // I am not sure this will be as effective a tool on raw reads, but this remains
-    // to be tested.
-
-    // add output file for telomeric repeat estimate!!
+    // function called from main.rs
 
     pub fn explore(matches: &clap::ArgMatches) {
         // parse arguments from main
@@ -61,24 +47,16 @@ pub mod explore {
         let putative_telomeric_file_txt = File::create(&putative_telomeric_file).unwrap();
         let mut putative_telomeric_file_txt = LineWriter::new(putative_telomeric_file_txt);
 
-        // add headers
-        if extension == "csv" {
-            writeln!(
-                explore_file,
-                "id,start_pos,end_pos,repeat_number,repeat_sequence,sequence_length"
-            )
-            .unwrap_or_else(|_| println!("[-]\tError in writing to file."));
-        }
-
         // add header to txt file
         writeln!(
             putative_telomeric_file_txt,
-            "# Potential telomeric repeats and their frequency.\n# Telomeric repeat, reverse complement, frequency."
+            "Telomeric repeat\treverse complement\tfrequency."
         )
         .unwrap_or_else(|_| println!("[-]\tError in writing to file."));
 
         // to report the telomeres...
         let mut output_vec: Vec<FormatTelomericRepeat> = Vec::new();
+        let mut output_vec_bed: Vec<TsvTelomericRepeat> = Vec::new();
         // i.e. if you chose a length, as opposed to a minmum/maximum
         if length > 0 {
             println!(
@@ -87,32 +65,65 @@ pub mod explore {
             );
             let reader = fasta::Reader::from_file(input_fasta).expect("[-]\tPath invalid.");
 
-            for result in reader.records() {
-                let record = result.expect("[-]\tError during fasta record parsing.");
-                let id = record.id().to_owned();
-                let seq_len = record.seq().len();
+            // try parallelising
+            let (sender, receiver) = channel();
 
-                let indexes = chunk_fasta(record, length);
-                let adjacents = calculate_indexes(indexes);
-                let formatted = generate_explore_data(adjacents, id.clone(), length);
-                output_vec.append(
-                    &mut merge_rotated_repeats(
-                        formatted.unwrap_or(vec![]),
-                        length,
-                        id.clone(),
-                        threshold,
-                        &mut explore_file,
-                        seq_len,
-                        dist_from_chromosome_end,
-                        &extension,
+            reader
+                .records()
+                .par_bridge()
+                .for_each_with(sender, |s, record| {
+                    let record = record.expect("[-]\tError during fasta record parsing.");
+                    let id = record.id().to_owned();
+                    let seq_len = record.seq().len();
+
+                    let indexes = chunk_fasta(record, length);
+                    let adjacents = calculate_indexes(indexes);
+                    let formatted =
+                        generate_explore_data(adjacents, id.clone(), length).unwrap_or(vec![]);
+
+                    s.send(
+                        merge_rotated_repeats(
+                            formatted,
+                            length,
+                            &id,
+                            threshold,
+                            seq_len,
+                            dist_from_chromosome_end,
+                        )
+                        .unwrap_or(Output {
+                            telomeric_repeats: vec![],
+                            bed_file: vec![],
+                        }),
                     )
-                    .unwrap_or(vec![]),
-                );
+                    .expect("[-]\tDid not send.");
+                });
 
-                println!("[+]\tChromosome {} processed", id);
-            }
+            // this bit is a little chaotic
+            // collect output into a vector
+            let output: Vec<Output> = receiver.iter().collect();
+
+            // so it can be cloned here
+            // to extract repeats
+            let mut telomeric_repeats = output
+                .clone()
+                .iter()
+                .map(|a| a.telomeric_repeats.clone())
+                .flatten()
+                .collect();
+            // and appended to the output vec
+            output_vec.append(&mut telomeric_repeats);
+
+            // and also cloned here
+            let mut bed_file: Vec<TsvTelomericRepeat> = output
+                .clone()
+                .iter()
+                .map(|a| a.bed_file.clone())
+                .flatten()
+                .collect();
+            // to get a bed file of all potential repeat locations.
+            output_vec_bed.append(&mut bed_file);
         } else {
-            // how can I parallelise this??
+            // if a range was chosen.
             println!(
                 "[+]\tExploring genome for potential telomeric repeats between lengths {} and {}.",
                 minimum, maximum
@@ -124,35 +135,82 @@ pub mod explore {
                 // I expect it's not an expensive call anyway.
                 let reader = fasta::Reader::from_file(input_fasta).expect("[-]\tPath invalid.");
 
-                for result in reader.records() {
-                    let record = result.expect("[-]\tError during fasta record parsing.");
-                    let id = record.id().to_owned();
-                    let seq_len = record.seq().len();
+                // try parallelising
+                let (sender, receiver) = channel();
+                reader
+                    .records()
+                    .par_bridge()
+                    .for_each_with(sender, |s, record| {
+                        let record = record.expect("[-]\tError during fasta record parsing.");
+                        let id = record.id().to_owned();
+                        let seq_len = record.seq().len();
 
-                    let indexes = chunk_fasta(record, length);
-                    let adjacents = calculate_indexes(indexes);
-                    let formatted = generate_explore_data(adjacents, id.clone(), length);
-                    output_vec.append(
-                        &mut merge_rotated_repeats(
-                            formatted.unwrap_or(vec![]),
-                            length,
-                            id.clone(),
-                            threshold,
-                            &mut explore_file,
-                            seq_len,
-                            dist_from_chromosome_end,
-                            &extension,
+                        let indexes = chunk_fasta(record, length);
+                        let adjacents = calculate_indexes(indexes);
+                        let formatted =
+                            generate_explore_data(adjacents, id.clone(), length).unwrap_or(vec![]);
+
+                        s.send(
+                            merge_rotated_repeats(
+                                formatted,
+                                length,
+                                &id,
+                                threshold,
+                                seq_len,
+                                dist_from_chromosome_end,
+                            )
+                            .unwrap_or(Output {
+                                telomeric_repeats: vec![],
+                                bed_file: vec![],
+                            }),
                         )
-                        .unwrap_or(vec![]),
-                    );
+                        .expect("[-]\tDid not send.");
+                    });
+                // this bit is a little chaotic
+                // collect output into a vector
+                let output: Vec<Output> = receiver.iter().collect();
 
-                    println!("[+]\tChromosome {} processed", id);
-                }
+                // so it can be cloned here
+                // to extract repeats
+                let mut telomeric_repeats = output
+                    .clone()
+                    .iter()
+                    .map(|a| a.telomeric_repeats.clone())
+                    .flatten()
+                    .collect();
+                // and appended to the output vec
+                output_vec.append(&mut telomeric_repeats);
+
+                // and also cloned here
+                let mut bed_file: Vec<TsvTelomericRepeat> = output
+                    .clone()
+                    .iter()
+                    .map(|a| a.bed_file.clone())
+                    .flatten()
+                    .collect();
+                // to get a bed file of all potential repeat locations.
+                output_vec_bed.append(&mut bed_file);
             }
         }
         println!("[+]\tFinished searching genome");
+        println!("[+]\tGenerating output");
         // print likely telomeric repeat
+        // costly calculation if threshold is too low.
         get_telomeric_repeat_estimates(&mut output_vec, &mut putative_telomeric_file_txt);
+        // write the bed file
+        writeln!(
+            explore_file,
+            "id\tstart_pos\tend_pos\trepeat_number\trepeat_sequence\tsequence_length"
+        )
+        .unwrap_or_else(|_| println!("[-]\tError in writing to file."));
+        for line in output_vec_bed {
+            writeln!(
+                explore_file,
+                "{}\t{}\t{}\t{}\t{}\t{}",
+                line.id, line.start, line.end, line.count, line.sequence, line.seq_len
+            )
+            .unwrap_or_else(|_| println!("[-]\tError in writing to file."));
+        }
     }
 
     // split the fasta into chunks of size k, where k is the potential telomeric repeat length
@@ -237,7 +295,7 @@ pub mod explore {
     ) -> Option<Vec<TelomericRepeatExplore>> {
         if adjacent_indexes.is_empty() {
             println!(
-                "[-]\tChromosome {}: No consecutive repeats of length {} were identified.",
+                "[-]\t\tChromosome {}: No consecutive repeats of length {} were identified.",
                 id, chunk_length
             );
             return None;
@@ -289,9 +347,6 @@ pub mod explore {
     // but crucially aggregates runs of records which are
     // string rotations of one another, yielding better summaries.
 
-    // TODO: can the sequences be summarised? I.e. ID reverse complement sets.
-    // -> Option<std::io::Result<()>> {
-
     #[derive(Debug, Clone, PartialEq, Eq, Hash)]
     pub struct FormatTelomericRepeat {
         sequence: String,
@@ -299,23 +354,39 @@ pub mod explore {
         sequence_len: usize,
     }
 
-    fn merge_rotated_repeats<T: std::io::Write>(
+    #[derive(Debug, Clone)]
+    pub struct TsvTelomericRepeat {
+        id: String,
+        start: usize,
+        end: usize,
+        count: i32,
+        sequence: String,
+        seq_len: usize,
+    }
+
+    #[derive(Debug, Clone)]
+    pub struct Output {
+        telomeric_repeats: Vec<FormatTelomericRepeat>,
+        bed_file: Vec<TsvTelomericRepeat>,
+    }
+
+    fn merge_rotated_repeats<'a>(
         data: Vec<TelomericRepeatExplore>,
         chunk_length: usize,
-        id: String,
+        id: &'a str,
         threshold: i32,
-        file: &mut LineWriter<T>,
         seq_len: usize,
         dist_from_chromosome_end: usize,
-        extension: &str,
-    ) -> Option<Vec<FormatTelomericRepeat>> {
+    ) -> Option<Output> {
         let mut output_vec: Vec<FormatTelomericRepeat> = Vec::new();
+        let mut output_vec_tsv: Vec<TsvTelomericRepeat> = Vec::new();
 
         // check for absence of data in the vector
         if data.is_empty() {
             println!(
-                "[-]\tChromosome {}: No consecutive repeats of length {} were identified.",
-                id, chunk_length
+                "[-]\t\tChromosome {}: No consecutive repeats of length {} were identified.",
+                id.clone(),
+                chunk_length
             );
             return None;
         }
@@ -340,22 +411,15 @@ pub mod explore {
                 if count > threshold {
                     if start < dist_from_chromosome_end || end > seq_len - dist_from_chromosome_end
                     {
-                        if extension == "csv" {
-                            writeln!(
-                                file,
-                                "{},{},{},{},{},{}",
-                                id, start, end, count, data[it].sequence, chunk_length
-                            )
-                            .unwrap_or_else(|_| println!("[-]\tError in writing to file."));
-                        } else {
-                            writeln!(
-                                file,
-                                "{}\t{}\t{}\t{}-{}",
-                                id, start, end, count, data[it].sequence
-                            )
-                            .unwrap_or_else(|_| println!("[-]\tError in writing to file."));
-                        }
-
+                        // to output later
+                        output_vec_tsv.push(TsvTelomericRepeat {
+                            id: id.to_owned(),
+                            start: start,
+                            end: end,
+                            count: count,
+                            sequence: data[it].sequence.clone(),
+                            seq_len: chunk_length,
+                        });
                         // and collect for guessing telomeric repeat
                         output_vec.push(FormatTelomericRepeat {
                             sequence: data[it].sequence.clone(),
@@ -364,7 +428,10 @@ pub mod explore {
                         });
                     }
                 }
-                break Some(output_vec);
+                break Some(Output {
+                    telomeric_repeats: output_vec,
+                    bed_file: output_vec_tsv,
+                });
             }
             // if consecutive sequences are rotations
             if utils::string_rotation(&data[it].sequence, &data[it + 1].sequence) {
@@ -376,24 +443,15 @@ pub mod explore {
                 if count > threshold {
                     if start < dist_from_chromosome_end || end > seq_len - dist_from_chromosome_end
                     {
-                        if extension == "csv" {
-                            writeln!(
-                                file,
-                                "{},{},{},{},{},{}",
-                                id, start, end, count, data[it].sequence, chunk_length
-                            )
-                            .unwrap_or_else(|_| println!("[-]\tError in writing to file."));
-                        } else {
-                            // I think keeping the sequence here is important for filtering?
-                            // maybe? Or maybe this actually is not useful in bedgraph format...
-                            writeln!(
-                                file,
-                                "{}\t{}\t{}\t{}-{}",
-                                id, start, end, count, data[it].sequence
-                            )
-                            .unwrap_or_else(|_| println!("[-]\tError in writing to file."));
-                        }
-
+                        // to output later
+                        output_vec_tsv.push(TsvTelomericRepeat {
+                            id: id.to_owned(),
+                            start: start,
+                            end: end,
+                            count: count,
+                            sequence: data[it].sequence.clone(),
+                            seq_len: chunk_length,
+                        });
                         // and collect for guessing telomeric repeat
                         output_vec.push(FormatTelomericRepeat {
                             sequence: data[it].sequence.clone(),
