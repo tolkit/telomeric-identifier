@@ -12,6 +12,7 @@ pub mod explore {
     use std::sync::mpsc::channel;
 
     // function called from main.rs
+    // TODO: sort out output file formats.
 
     pub fn explore(matches: &clap::ArgMatches) {
         // parse arguments from main
@@ -50,7 +51,7 @@ pub mod explore {
         // add header to txt file
         writeln!(
             putative_telomeric_file_txt,
-            "Telomeric repeat\treverse complement\tfrequency."
+            "telomeric_repeat\treverse_complement\tfrequency"
         )
         .unwrap_or_else(|_| println!("[-]\tError in writing to file."));
 
@@ -244,7 +245,7 @@ pub mod explore {
             } else if a == b {
                 indexes.push(ChunkedFasta {
                     position: pos,
-                    sequence: str::from_utf8(a).unwrap().to_owned(),
+                    sequence: str::from_utf8(a).unwrap().to_uppercase(),
                 });
             }
             pos += chunk_length;
@@ -294,7 +295,7 @@ pub mod explore {
         chunk_length: usize,
     ) -> Option<Vec<TelomericRepeatExplore>> {
         if adjacent_indexes.is_empty() {
-            println!(
+            eprintln!(
                 "[-]\t\tChromosome {}: No consecutive repeats of length {} were identified.",
                 id, chunk_length
             );
@@ -383,7 +384,7 @@ pub mod explore {
 
         // check for absence of data in the vector
         if data.is_empty() {
-            println!(
+            eprintln!(
                 "[-]\t\tChromosome {}: No consecutive repeats of length {} were identified.",
                 id.clone(),
                 chunk_length
@@ -477,7 +478,7 @@ pub mod explore {
         putative_telomeric_file: &mut LineWriter<T>,
     ) {
         if telomeric_repeats.is_empty() {
-            println!("[-]\tNo potential telomeric repeats found.");
+            eprintln!("[-]\tNo potential telomeric repeats found.");
             return;
         }
 

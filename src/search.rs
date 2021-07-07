@@ -10,6 +10,7 @@ pub mod search {
     use std::str;
 
     // uses a user defined string to query against the genome
+    // can we provide a threshold to filter and get likely scaffolds with telomeric repeats?
 
     pub fn search(matches: &clap::ArgMatches) {
         let input_fasta = matches.value_of("fasta").unwrap();
@@ -93,11 +94,11 @@ pub mod search {
         let mut window_index = window_size;
         // iterate over windows
         for window in windows {
+            // make window uppercase
+            let windows_upper = str::from_utf8(window).unwrap().to_uppercase();
             // for each window, find the motifs in this
-            let forward_motif =
-                utils::find_motifs(forward_telomeric_seq, str::from_utf8(window).unwrap());
-            let reverse_motif =
-                utils::find_motifs(&reverse_telomeric_seq, str::from_utf8(window).unwrap());
+            let forward_motif = utils::find_motifs(forward_telomeric_seq, &windows_upper);
+            let reverse_motif = utils::find_motifs(&reverse_telomeric_seq, &windows_upper);
 
             // remove overlapping matches
             // not sure this is necessary, but thought it might be...

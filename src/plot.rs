@@ -95,10 +95,10 @@ pub mod plot {
             let record: TelomericRepeatRecord = result.unwrap();
             plot_coords_vec.push(record);
         }
-        if sort {
-            // I dont think this works
-            //plot_coords_vec.sort_unstable_by_key(|d| d.id.clone());
-        }
+        // if sort {
+        // I dont think this works
+        //     plot_coords_vec.sort_unstable_by_key(|d| d.id.clone());
+        // }
         plot_coords_vec
     }
 
