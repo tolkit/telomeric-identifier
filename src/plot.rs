@@ -18,23 +18,24 @@ pub mod plot {
     pub fn plot(matches: &clap::ArgMatches) -> std::io::Result<()> {
         // parse the command line options
         let csv = matches.value_of("csv").unwrap();
-        let chromosome_cutoff =
-            value_t!(matches.value_of("length_chromosome"), i32).unwrap_or_else(|e| e.exit());
+        // a bug here for manual input of chromosome cut-off which I can't figure out right now.
+        let chromosome_cutoff = 0;
+            // value_t!(matches.value_of("length_chromosome"), i32).unwrap_or_else(|e| e.exit());
         let height_subplot = value_t!(matches.value_of("height"), i32).unwrap_or_else(|e| e.exit());
         let width = value_t!(matches.value_of("width"), i32).unwrap_or_else(|e| e.exit());
         let output = matches.value_of("output").unwrap();
         // sorts chromosomes lexicographically
         // better way of doing this?
-        let sort = value_t!(matches.value_of("sort"), bool).unwrap_or_else(|e| e.exit());
+        // let sort = value_t!(matches.value_of("sort"), bool).unwrap_or_else(|e| e.exit());
 
         // parse the csv
-        let parsed_csv = parse_csv(csv, sort);
+        let parsed_csv = parse_csv(csv);
 
         // calculate the number of chromosomes to plot with the length cutoff
         let chromosome_number = chromosome_number(&parsed_csv, chromosome_cutoff);
 
         // height of plot
-        let height: i32 = height_subplot * chromosome_number as i32 + MARGIN;
+        let height: i32 = height_subplot * chromosome_number as i32 + (2 * MARGIN);
 
         // generate the plot data (see struct PlotData)
         let plot_data = generate_plot_data(parsed_csv, height, width, height_subplot);
@@ -66,7 +67,7 @@ pub mod plot {
                  </svg>",
             width,
             height,
-            add_all_path_elements(plot_data_filtered, height_subplot as isize)
+            add_all_path_elements(plot_data_filtered, height_subplot as isize, width)
         );
 
         svg_file.write_all(svg.as_bytes()).expect("unable to write");
@@ -88,17 +89,13 @@ pub mod plot {
 
     // this parses the csv into a Vec of Telomeric Repeat Records
 
-    fn parse_csv(path: &str, sort: bool) -> Vec<TelomericRepeatRecord> {
+    fn parse_csv(path: &str) -> Vec<TelomericRepeatRecord> {
         let mut csv_reader = ReaderBuilder::new().from_path(path).unwrap();
         let mut plot_coords_vec = Vec::new();
         for result in csv_reader.deserialize() {
             let record: TelomericRepeatRecord = result.unwrap();
             plot_coords_vec.push(record);
         }
-        // if sort {
-        // I dont think this works
-        //     plot_coords_vec.sort_unstable_by_key(|d| d.id.clone());
-        // }
         plot_coords_vec
     }
 
@@ -129,7 +126,8 @@ pub mod plot {
                 it += 1;
             }
         }
-        max_sizes.len()
+        // add 1 as we can never compare the last entry.
+        max_sizes.len() + 1
     }
 
     // scale a range [min, max] to custom range [a, b]
@@ -152,6 +150,7 @@ pub mod plot {
         width: i32,
         height_per_plot: i32,
     ) -> Option<String> {
+        let subplot_gap = 25.0;
         // need this here...
         if path_vec.is_empty() {
             return None;
@@ -159,41 +158,42 @@ pub mod plot {
 
         // somehow going to have to scale the lines to fit on all graphs
         let mut path = String::new();
-        let width_incl_margins = width - MARGIN;
-        //let height_incl_margins = height - MARGIN;
+        // margin at either side of the plot
+        let width_incl_margins = width - (MARGIN * 2);
 
         let x_bin: f64 = width_incl_margins as f64 / x_max as f64;
 
         // add the first move to point
         path += &format!(
             "M{},{}",
-            (MARGIN / 2) as f64 + x_bin,
+            MARGIN as f64 / 2f64, // + x_bin, don't think I need x_bin here?
             // y is height - repeat number, a = 0, b = height_per_plot
             // min is again zero (no negative repeats), max is greatest repeats per chromosome
             height as f64
+                - MARGIN as f64
                 - scale_y(
-                    // bug here. need to check whether path vec is empty?
                     path_vec[0].1 as f64,
                     0.0,
                     height_per_plot as f64,
                     0.0,
-                    y_max as f64
+                    y_max as f64 + subplot_gap
                 )
         );
 
-        let mut bin: f64 = 0.0;
+        let mut bin: f64 = x_bin;
         for element in path_vec.iter().skip(1) {
             path += &format!(
                 "L{},{}",
                 bin + (MARGIN as f64 / 2.0),
                 //
                 height as f64
+                    - MARGIN as f64
                     - scale_y(
                         element.1 as f64,
                         0.0,
                         height_per_plot as f64,
                         0.0,
-                        y_max as f64
+                        y_max as f64 + subplot_gap
                     )
             );
             bin += x_bin;
@@ -202,25 +202,43 @@ pub mod plot {
     }
 
     // add the path elements from Vec<PlotData.path> to their SVG tags
-    // also add chromosome text here
-    // TODO: axis labels, lines and ticks go here if we want them
 
-    fn add_all_path_elements(plot_data: Vec<PlotData>, height_subplot: isize) -> String {
+    fn add_all_path_elements(
+        plot_data: Vec<PlotData>,
+        height_subplot: isize,
+        width: i32,
+    ) -> String {
         let mut all_paths = String::new();
         let length = plot_data.len();
+        // gap between subplots; could be added as a parameter.
+        let subplot_gap = 25;
         // chromosome labels WRONG as they are being labelled from the top down, rather than the bottom up.
         for (i, row) in plot_data.iter().enumerate() {
             // add text tag here
             all_paths += &format!(
                 "<text x='25' y='{}' class='chromosome_label' font-family='monospace'>{}\n↓</text>",
-                // is +55 a good offset..?
-                (1 + i as isize * height_subplot) + 55,
+                (i as isize * height_subplot) + subplot_gap - 5 + MARGIN as isize,
                 row.id
             );
+            // add axis tags here
+            all_paths += &format!(
+                "<text x='{}' y='{}' class='x_axis_label' font-family='monospace'>{} ↑</text>",
+                // 37 aligns the up arrow
+                width - 2 * MARGIN - 37,
+                (i as isize * height_subplot) + subplot_gap - 5 + MARGIN as isize + height_subplot,
+                format_number_to_mb(row.max)
+            );
             // reverse the order of the paths!
-            all_paths += &format!("<path d='{}' class='chromosome_line' stroke='black' fill='none' stroke-width='1' transform='translate(0,{})'/>\n", plot_data[length - i - 1].path, i as isize * -height_subplot);
+            all_paths += &format!("<path d='{}' id='{}' class='chromosome_line' stroke='black' fill='none' stroke-width='1' transform='translate(0,{})'/>\n", 
+                plot_data[length - i - 1].path, 
+                plot_data[length - i - 1].id, 
+                -(i as isize * height_subplot));
         }
         all_paths
+    }
+
+    fn format_number_to_mb(n: usize) -> String {
+        format!("{:.1}Mb", (n as f64 / 1000_000f64))
     }
 
     // the final data structure

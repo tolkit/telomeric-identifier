@@ -246,15 +246,6 @@ fn main() {
                         .help("The input CSV file."),
                 )
                 .arg(
-                    Arg::with_name("length_chromosome")
-                        .short("l")
-                        .long("length_chromosome")
-                        .takes_value(true)
-                        .required(false)
-                        .default_value("1000000") // 1 million bases
-                        .help("Chromosomes shorter than this length will be excluded from the plot. Useful for unplaced scaffold exclusion."),
-                )
-                .arg(
                     Arg::with_name("height")
                         .short("h")
                         .long("height")
@@ -262,15 +253,6 @@ fn main() {
                         .required(false)
                         .default_value("200")
                         .help("The height of subplots (px)."),
-                )
-                .arg(
-                    Arg::with_name("sort")
-                        .short("s")
-                        .long("sort")
-                        .takes_value(true)
-                        .required(false)
-                        .default_value("false")
-                        .help("Sort the chromosomes by lexicographic ordering of chromosome names?"),
                 )
                 .arg(
                     Arg::with_name("width")
