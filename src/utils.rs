@@ -81,7 +81,7 @@ pub mod utils {
         indexes
     }
 
-    // string rotation
+    // string rotation algorithms
     // see https://github.com/rrbonham96/rust-ctci/blob/a2540532b098a06c29f2a5f06f54fc5717fd7669/src/arrays_and_strings/is_rotation.rs
     // when there is an error/snp in the telomeric sequence, it causes a shift in the
     // repeat that is returned in 'explore' subcommand. This info can be leveraged to count consecutive sequences...
@@ -166,6 +166,33 @@ pub mod utils {
 
         // now we have four strings, and have to report one
         let mut strings = vec![&lms_f, &lms_r, &lms_fr, &lms_rr];
+        strings.string_sort_unstable(natural_lexical_cmp);
+        strings[0].to_string()
+    }
+
+    // given a string (of DNA)
+    // return the lexicographical minimal representation
+    // accounting for both forward & rev comp.
+    // I guess it will kind of be similar to the above function
+    // except we will expose this to the API
+
+    pub fn lex_min(dna_string: &str) -> String {
+        // revcomp
+        let dna_string_r = reverse_complement(dna_string);
+        // index for forward and reverse
+        let index_f = minimal_rotation(dna_string.as_bytes());
+        let index_r = minimal_rotation(dna_string_r.as_bytes());
+        // create the substrings
+        // starts
+        let start_f = &dna_string[index_f..];
+        let start_r = &dna_string[index_r..];
+        // ends
+        let end_f = &dna_string[0..index_f];
+        let end_r = &dna_string[0..index_r];
+        // string
+        let lms_f = format!("{}{}", start_f, end_f);
+        let lms_r = format!("{}{}", start_r, end_r);
+        let mut strings = vec![&lms_f, &lms_r];
         strings.string_sort_unstable(natural_lexical_cmp);
         strings[0].to_string()
     }

@@ -7,6 +7,7 @@ use std::process;
 use tidk::clades::clades::CLADES;
 use tidk::explore::explore;
 use tidk::finder::finder;
+use tidk::min::min;
 use tidk::plot::plot;
 use tidk::search::search;
 use tidk::trim::trim;
@@ -273,6 +274,25 @@ fn main() {
                         .help("Output filename for the SVG (without extension)."),
                 )
         )
+        .subcommand(
+            clap::SubCommand::with_name("min")
+                .about("Emit the canonical lexicographically minimal DNA string.")
+                // output file name
+                .arg(
+                    Arg::with_name("DNA string")
+                        .required_unless("file")
+                        .multiple(true)
+                        .help("Input DNA string. Multiple inputs allowed."),
+                )
+                .arg(
+                    Arg::with_name("file")
+                        .short("f")
+                        .long("file")
+                        .takes_value(true)
+                        .required_unless("DNA string")
+                        .help("The input file."),
+                )
+        )
         .get_matches();
 
     // feed command line options to each main function
@@ -297,6 +317,10 @@ fn main() {
         "plot" => {
             let matches = subcommand.1.unwrap();
             plot::plot(matches).unwrap();
+        }
+        "min" => {
+            let matches = subcommand.1.unwrap();
+            min::min_dna_string(matches);
         }
         _ => {
             println!("Subcommand invalid, run with '--help' for subcommand options. Exiting.");
