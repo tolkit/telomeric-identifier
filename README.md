@@ -1,6 +1,12 @@
 # A Telomere Identification toolKit (tidk)
 
-Simple and fast de-novo identification of telomeric repeats (`explore`), finding frequency of a telomeric sequence by clade in windows (`find`), or a user defined sequence in windows (`search`). Fasta sequences can also be trimmed using a supplied base repeat string (see `trim`).
+tidk is a toolkit to identify and visualise telomeric repeats for the Darwin Tree of Life genomes. tidk works especially well on chromosomal genomes, but can also work on PacBio HiFi reads well (see <a href="https://github.com/tolkit/a-telomeric-repeat-database">the telomeric repeat database</a>). There are a few modules in the tool, which may be useful.
+
+1. `explore` - tries to find the telomeric repeat unit in the genome.
+2. `find` and `search` are essentially the same. They identify a repeat sequence in windows across the genome. `find` uses an in-build table of telomeric repeats, in `search` you supply your own.
+3. `plot` does what is says on the tin, and plots the csv output of `find` or `search` as an SVG.
+4. `min` returns the lexicographically minimal string of an input DNA string(s) or file of DNA sequences.
+5. `trim` trims fasta sequences using a supplied base repeat string.
 
 ## Install
 
@@ -15,7 +21,7 @@ Compiling takes anywhere from 1-6 minutes from fresh (tested on the farm). The e
 ### Overall
 
 ```
-TIDK 0.1.4
+TIDK 0.1.5
 Max Brown <mb39@sanger.ac.uk>
 A Telomere Identification Toolkit.
 
@@ -31,8 +37,10 @@ SUBCOMMANDS:
     find       Supply the name of a clade your organsim belongs to, and this submodule will find all telomeric
                repeat matches for that clade.
     help       Prints this message or the help of the given subcommand(s)
+    min        Emit the canonical lexicographically minimal DNA string.
     plot       SVG plot of CSV generated from search or find.
     search     Search the input genome with a specific telomeric repeat search string.
+    trim       Trim a specific telomeric repeat from the input reads and yield reads oriented at the telomere start.
 ```
 
 ### Explore 
@@ -150,6 +158,27 @@ tidk plot -c finder/Xes_telomeric_repeat_windows.csv -o ilXes -h 120 -w 800
 ```
 <img src="./ilXes.svg">
 
+### Min
+
+`tidk min` returns the lexicographically minimal DNA string given an input. Useful for universally comparing repeats using this tool.
+
+```
+tidk-min 
+Emit the canonical lexicographically minimal DNA string.
+
+USAGE:
+    tidk min <DNA string>... --file <file>
+
+FLAGS:
+    -h, --help       Prints help information
+    -V, --version    Prints version information
+
+OPTIONS:
+    -f, --file <file>    The input file.
+
+ARGS:
+    <DNA string>...    Input DNA string. Multiple inputs allowed.
+```
 
 ### Trim
 
