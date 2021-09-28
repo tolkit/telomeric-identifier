@@ -1,9 +1,9 @@
 # A Telomere Identification toolKit (tidk)
 
-tidk is a toolkit to identify and visualise telomeric repeats for the Darwin Tree of Life genomes. tidk works especially well on chromosomal genomes, but can also work on PacBio HiFi reads well (see <a href="https://github.com/tolkit/a-telomeric-repeat-database">the telomeric repeat database</a>). There are a few modules in the tool, which may be useful.
+tidk is a toolkit to identify and visualise telomeric repeats for the Darwin Tree of Life genomes. tidk works especially well on chromosomal genomes, but can also work on PacBio HiFi reads well (see <a href="https://github.com/tolkit/a-telomeric-repeat-database">the telomeric repeat database</a> for many examples). There are a few modules in the tool, which may be useful to anyone investigating telomeric repeat sequences in a genome.
 
 1. `explore` - tries to find the telomeric repeat unit in the genome.
-2. `find` and `search` are essentially the same. They identify a repeat sequence in windows across the genome. `find` uses an in-build table of telomeric repeats, in `search` you supply your own.
+2. `find` and `search` are essentially the same. They identify a repeat sequence in windows across the genome. `find` uses an in-built table of telomeric repeats, in `search` you supply your own.
 3. `plot` does what is says on the tin, and plots the csv output of `find` or `search` as an SVG.
 4. `min` returns the lexicographically minimal string of an input DNA string(s) or file of DNA sequences.
 5. `trim` trims fasta sequences using a supplied base repeat string.
@@ -160,16 +160,26 @@ tidk plot -c finder/Xes_telomeric_repeat_windows.csv -o ilXes -h 120 -w 800
 
 ### Min
 
-`tidk min` returns the lexicographically minimal DNA string given an input. Useful for universally comparing repeats using this tool.
+`tidk min` returns the lexicographically minimal DNA string given an input. Useful for universally comparing repeats using this tool. Surprisingly, it works on even chromosomal length DNA strings quickly, not that you would want to do that...
+
+Examples:
+
+- `tidk min AATGCG` or process multiple `tidk min AATGCG AAGGTTC GGTTAAT`
+- `tidk min -f input.fa` proccesses input fasta, and outputs fasta. Otherwise `tidk min -f input.txt` reads lines and outputs.
+- `echo "AATTGC" | tidk min`, pipes work.
+- `cat input.fasta | tidk min -x` outputs a fasta. Otherwise `cat input.txt | tidk min` reads lines and outputs. 
+
+Note `cat` here is redundant and creates extra work, but it just shows the piping in action.
 
 ```
 tidk-min 
 Emit the canonical lexicographically minimal DNA string.
 
 USAGE:
-    tidk min <DNA string>... --file <file>
+    tidk min [FLAGS] [OPTIONS] [DNA string]...
 
 FLAGS:
+    -x, --fasta      STDIN is in fasta format.
     -h, --help       Prints help information
     -V, --version    Prints version information
 

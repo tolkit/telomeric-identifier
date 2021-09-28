@@ -280,16 +280,22 @@ fn main() {
                 // output file name
                 .arg(
                     Arg::with_name("DNA string")
-                        .required_unless("file")
+                        // .required_unless("file")
                         .multiple(true)
                         .help("Input DNA string. Multiple inputs allowed."),
+                )
+                .arg(
+                    Arg::with_name("fasta")
+                        .short("x")
+                        .long("fasta")
+                        .help("STDIN is in fasta format."),
                 )
                 .arg(
                     Arg::with_name("file")
                         .short("f")
                         .long("file")
                         .takes_value(true)
-                        .required_unless("DNA string")
+                        // .required_unless("DNA string")
                         .help("The input file."),
                 )
         )
