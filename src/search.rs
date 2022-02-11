@@ -3,7 +3,6 @@ pub mod search {
     // essentially the same as finder
     use crate::utils::utils;
     use bio::io::fasta;
-    use clap::value_t;
     use std::fs::{create_dir_all, File};
     use std::io::LineWriter;
     use std::io::Write;
@@ -16,17 +15,15 @@ pub mod search {
         let input_fasta = matches.value_of("fasta").unwrap();
         let reader = fasta::Reader::from_file(input_fasta).expect("[-]\tPath invalid.");
 
-        let telomeric_repeat =
-            value_t!(matches.value_of("string"), String).unwrap_or_else(|e| e.exit());
-        let extension =
-            value_t!(matches.value_of("extension"), String).unwrap_or_else(|e| e.exit());
+        let telomeric_repeat: String = matches.value_of_t("string").unwrap_or_else(|e| e.exit());
+        let extension: String = matches.value_of_t("extension").unwrap_or_else(|e| e.exit());
 
         println!(
             "[+]\tSearching genome for telomeric repeat: {}",
             telomeric_repeat
         );
 
-        let window_size = value_t!(matches.value_of("window"), usize).unwrap_or_else(|e| e.exit());
+        let window_size: usize = matches.value_of_t("window").unwrap_or_else(|e| e.exit());
         let output = matches.value_of("output").unwrap();
 
         // create directory for output

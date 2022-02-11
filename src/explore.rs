@@ -1,7 +1,6 @@
 pub mod explore {
     use crate::utils::utils;
     use bio::io::fasta;
-    use clap::value_t;
     use itertools::Itertools;
     use rayon::prelude::*;
     use std::collections::HashMap;
@@ -17,19 +16,19 @@ pub mod explore {
     pub fn explore(matches: &clap::ArgMatches) {
         // parse arguments from main
         let input_fasta = matches.value_of("fasta").unwrap();
-        let length = value_t!(matches.value_of("length"), usize).unwrap_or_else(|e| e.exit());
+        let length = matches.value_of_t("length").unwrap_or_else(|e| e.exit());
 
         // if length is not set, these are the lengths (and length itself is set to zero)
-        let minimum = value_t!(matches.value_of("minimum"), usize).unwrap_or_else(|e| e.exit());
-        let maximum = value_t!(matches.value_of("maximum"), usize).unwrap_or_else(|e| e.exit());
+        let minimum = matches.value_of_t("minimum").unwrap_or_else(|e| e.exit());
+        let maximum: usize = matches.value_of_t("maximum").unwrap_or_else(|e| e.exit());
 
-        let threshold = value_t!(matches.value_of("threshold"), i32).unwrap_or_else(|e| e.exit());
+        let threshold = matches.value_of_t("threshold").unwrap_or_else(|e| e.exit());
         let output = matches.value_of("output").unwrap();
-        let extension =
-            value_t!(matches.value_of("extension"), String).unwrap_or_else(|e| e.exit());
+        let extension: String = matches.value_of_t("extension").unwrap_or_else(|e| e.exit());
 
-        let dist_from_chromosome_end =
-            value_t!(matches.value_of("distance"), usize).unwrap_or_else(|e| e.exit());
+        let dist_from_chromosome_end = matches.value_of_t("distance").unwrap_or_else(|e| e.exit());
+
+        let verbose = matches.is_present("verbose");
 
         // create directory for output
         if let Err(e) = create_dir_all("./explore/") {
@@ -79,8 +78,8 @@ pub mod explore {
 
                     let indexes = chunk_fasta(record, length);
                     let adjacents = calculate_indexes(indexes);
-                    let formatted =
-                        generate_explore_data(adjacents, id.clone(), length).unwrap_or(vec![]);
+                    let formatted = generate_explore_data(adjacents, id.clone(), length, verbose)
+                        .unwrap_or(vec![]);
 
                     s.send(
                         merge_rotated_repeats(
@@ -90,6 +89,7 @@ pub mod explore {
                             threshold,
                             seq_len,
                             dist_from_chromosome_end,
+                            verbose,
                         )
                         .unwrap_or(Output {
                             telomeric_repeats: vec![],
@@ -149,7 +149,8 @@ pub mod explore {
                         let indexes = chunk_fasta(record, length);
                         let adjacents = calculate_indexes(indexes);
                         let formatted =
-                            generate_explore_data(adjacents, id.clone(), length).unwrap_or(vec![]);
+                            generate_explore_data(adjacents, id.clone(), length, verbose)
+                                .unwrap_or(vec![]);
 
                         s.send(
                             merge_rotated_repeats(
@@ -159,6 +160,7 @@ pub mod explore {
                                 threshold,
                                 seq_len,
                                 dist_from_chromosome_end,
+                                verbose,
                             )
                             .unwrap_or(Output {
                                 telomeric_repeats: vec![],
@@ -293,12 +295,16 @@ pub mod explore {
         adjacent_indexes: Vec<RepeatRuns>,
         id: String,
         chunk_length: usize,
+        verbose: bool,
     ) -> Option<Vec<TelomericRepeatExplore>> {
         if adjacent_indexes.is_empty() {
-            eprintln!(
-                "[-]\t\tChromosome {}: No consecutive repeats of length {} were identified.",
-                id, chunk_length
-            );
+            // verbosity flag
+            if verbose {
+                eprintln!(
+                    "[-]\t\tChromosome {}: No consecutive repeats of length {} were identified.",
+                    id, chunk_length
+                );
+            }
             return None;
         }
         // collect all of this vector into a nice format to print for the moment.
@@ -378,17 +384,20 @@ pub mod explore {
         threshold: i32,
         seq_len: usize,
         dist_from_chromosome_end: usize,
+        verbose: bool,
     ) -> Option<Output> {
         let mut output_vec: Vec<FormatTelomericRepeat> = Vec::new();
         let mut output_vec_tsv: Vec<TsvTelomericRepeat> = Vec::new();
 
         // check for absence of data in the vector
         if data.is_empty() {
-            eprintln!(
-                "[-]\t\tChromosome {}: No consecutive repeats of length {} were identified.",
-                id.clone(),
-                chunk_length
-            );
+            if verbose {
+                eprintln!(
+                    "[-]\t\tChromosome {}: No consecutive repeats of length {} were identified.",
+                    id.clone(),
+                    chunk_length
+                );
+            }
             return None;
         }
 

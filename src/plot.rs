@@ -1,8 +1,6 @@
 pub mod plot {
 
     // read in csv and make svg plot
-
-    use clap::value_t;
     use csv::ReaderBuilder;
     use serde::Deserialize;
     use std::fs::File;
@@ -21,8 +19,8 @@ pub mod plot {
         // a bug here for manual input of chromosome cut-off which I can't figure out right now.
         let chromosome_cutoff = 0;
             // value_t!(matches.value_of("length_chromosome"), i32).unwrap_or_else(|e| e.exit());
-        let height_subplot = value_t!(matches.value_of("height"), i32).unwrap_or_else(|e| e.exit());
-        let width = value_t!(matches.value_of("width"), i32).unwrap_or_else(|e| e.exit());
+        let height_subplot = matches.value_of_t("height").unwrap_or_else(|e| e.exit());
+        let width = matches.value_of_t("width").unwrap_or_else(|e| e.exit());
         let output = matches.value_of("output").unwrap();
         // sorts chromosomes lexicographically
         // better way of doing this?
@@ -58,11 +56,11 @@ pub mod plot {
                  'http://www.w3.org/TR/2001/REC-SVG-20010904/DTD/svg10.dtd'> <svg version='1.0' \
                  width='{}' height='{}' xmlns='http://www.w3.org/2000/svg' \
                  xmlns:xlink='http://www.w3.org/1999/xlink'> \
-
+                \
                  <style type='text/css'> \
                  .chromosome_line:hover {{ stroke-opacity: 1.0; stroke: crimson; stroke-width: 2; }} \
                  </style> \
-
+                \
                  {} \
                  </svg>",
             width,

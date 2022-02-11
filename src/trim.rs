@@ -3,7 +3,6 @@ pub mod trim {
     // a reduced version of search
     use crate::utils::utils;
     use bio::io::fasta;
-    use clap::value_t;
     use std::fs::{create_dir_all, File};
     use std::io::LineWriter;
     use std::io::Write;
@@ -15,11 +14,10 @@ pub mod trim {
         let input_fasta = matches.value_of("fasta").unwrap();
         let reader = fasta::Reader::from_file(input_fasta).expect("[-]\tPath invalid.");
 
-        let min_occur = value_t!(matches.value_of("min_occur"), usize).unwrap_or_else(|e| e.exit());
-        let min_len = value_t!(matches.value_of("min_len"), usize).unwrap_or_else(|e| e.exit());
+        let min_occur = matches.value_of_t("min_occur").unwrap_or_else(|e| e.exit());
+        let min_len = matches.value_of_t("min_len").unwrap_or_else(|e| e.exit());
 
-        let telomeric_repeat =
-            value_t!(matches.value_of("string"), String).unwrap_or_else(|e| e.exit());
+        let telomeric_repeat: String = matches.value_of_t("string").unwrap_or_else(|e| e.exit());
         let reverse_telomeric_seq = utils::reverse_complement(&telomeric_repeat);
         // min_occur * telomeric repeats
         let multiple_telomeric_repeat = telomeric_repeat.repeat(min_occur);

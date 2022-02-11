@@ -2,7 +2,6 @@ pub mod finder {
     use crate::clades::clades;
     use crate::utils::utils;
     use bio::io::fasta;
-    use clap::value_t;
     use std::fs::{create_dir_all, File};
     use std::io::LineWriter;
     use std::io::Write;
@@ -21,7 +20,7 @@ pub mod finder {
         let input_fasta = matches.value_of("fasta").unwrap();
         let reader = fasta::Reader::from_file(input_fasta).expect("[-]\tPath invalid.");
 
-        let clade = value_t!(matches.value_of("clade"), String).unwrap_or_else(|e| e.exit());
+        let clade: String = matches.value_of_t("clade").unwrap_or_else(|e| e.exit());
         let clade_info = clades::return_telomere_sequence(&clade);
 
         if clade_info.length == 1 {
@@ -39,7 +38,7 @@ pub mod finder {
             }
         }
 
-        let window_size = value_t!(matches.value_of("window"), usize).unwrap_or_else(|e| e.exit());
+        let window_size = matches.value_of_t("window").unwrap_or_else(|e| e.exit());
         let output = matches.value_of("output").unwrap();
 
         // create directory for output
