@@ -6,6 +6,7 @@ pub mod min {
     use std::str;
 
     // presumably want  revcomp too?
+    // use atty as well?
     pub fn min_dna_string(matches: &clap::ArgMatches) {
         let input_file = matches.value_of("file");
         let is_fasta = matches.is_present("fasta");
