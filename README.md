@@ -10,6 +10,14 @@ tidk is a toolkit to identify and visualise telomeric repeats for the Darwin Tre
 
 ## Install
 
+The easiest way to install is through conda:
+
+```bash
+conda install -c bioconda tidk
+```
+
+Otherwise...
+
 As with other Rust projects, you have to complile yourself. <a href="https://www.rust-lang.org/tools/install">Download rust</a>, clone this repo, and then run:
 
 `cargo build --release`
