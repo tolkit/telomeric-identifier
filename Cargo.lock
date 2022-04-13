@@ -18,6 +18,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "70033777eb8b5124a81a1889416543dddef2de240019b674c81285a2635a7e1e"
 
 [[package]]
+name = "anyhow"
+version = "1.0.56"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4361135be9122e0870de935d7c439aef945b9f9ddd4199a553b5270b49c82a27"
+
+[[package]]
 name = "approx"
 version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -51,10 +57,11 @@ checksum = "cdb031dd78e28731d87d56cc8ffef4a8f36ca26c38fe2de700543e627f8a464a"
 
 [[package]]
 name = "bio"
-version = "0.32.0"
+version = "0.41.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f1161c7b80eea668a884b4be136d83ef5175df5aaa6dcba482bdf4fbe1d046f2"
+checksum = "4a69423e30444738eccc5e54eccee75779dd3f15ecc0469b95d8529d4b6b7586"
 dependencies = [
+ "anyhow",
  "approx",
  "bio-types",
  "bit-set",
@@ -63,10 +70,9 @@ dependencies = [
  "csv",
  "custom_derive",
  "enum-map",
- "fnv",
  "fxhash",
  "getset",
- "itertools 0.9.0",
+ "itertools",
  "itertools-num",
  "lazy_static",
  "multimap",
@@ -76,29 +82,29 @@ dependencies = [
  "num-traits",
  "ordered-float",
  "petgraph",
- "quick-error",
+ "rand",
  "regex",
  "serde",
  "serde_derive",
- "snafu",
  "statrs",
  "strum",
- "strum_macros 0.18.0",
+ "strum_macros",
+ "thiserror",
  "triple_accel",
  "vec_map",
 ]
 
 [[package]]
 name = "bio-types"
-version = "0.10.0"
+version = "0.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "58d64154e76eb7c0d369ad6d26b98bbb331c8968da16d063a3ea215e23bbb31c"
+checksum = "13bc4296477f37f54e4fd21efaf48a7fa40fbb289bfbf338af5fbbe42797acb6"
 dependencies = [
  "derive-new",
  "lazy_static",
- "quick-error",
  "regex",
- "strum_macros 0.20.1",
+ "strum_macros",
+ "thiserror",
 ]
 
 [[package]]
@@ -172,14 +178,28 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
 
 [[package]]
-name = "clap"
-version = "3.0.14"
+name = "chrono"
+version = "0.4.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b63edc3f163b3c71ec8aa23f9bd6070f77edbf3d1d198b164afa90ff00e4ec62"
+checksum = "670ad68c9088c2a963aaa298cb369688cf3f9465ce5e2d4ca10e6e0098a1ce73"
+dependencies = [
+ "libc",
+ "num-integer",
+ "num-traits",
+ "time",
+ "winapi",
+]
+
+[[package]]
+name = "clap"
+version = "3.1.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "71c47df61d9e16dc010b55dba1952a57d8c215dbb533fd13cdd13369aac73b1c"
 dependencies = [
  "atty",
  "bitflags",
  "indexmap",
+ "lazy_static",
  "os_str_bytes",
  "strsim",
  "termcolor",
@@ -307,12 +327,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "doc-comment"
-version = "0.3.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fea41bba32d969b513997752735605054bc0dfa92b4c56bf1189f2e174be7a10"
-
-[[package]]
 name = "either"
 version = "1.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -363,12 +377,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "37ab347416e802de484e4d03c7316c48f1ecb56574dfd4a46a80f173ce1de04d"
 
 [[package]]
-name = "fnv"
-version = "1.0.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3f9eec918d3f24069decb9af1554cad7c880e2da24a9afd88aca000531ab82c1"
-
-[[package]]
 name = "form_urlencoded"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -404,7 +412,7 @@ checksum = "8fc3cb4d91f53b50155bdcfd23f6a4c39ae1969c2ae85982b135750cccaf5fce"
 dependencies = [
  "cfg-if",
  "libc",
- "wasi",
+ "wasi 0.9.0+wasi-snapshot-preview1",
 ]
 
 [[package]]
@@ -485,15 +493,6 @@ checksum = "4fb1fa934250de4de8aef298d81c729a7d33d8c239daa3a7575e6b92bfc7313b"
 dependencies = [
  "autocfg",
  "hashbrown",
-]
-
-[[package]]
-name = "itertools"
-version = "0.9.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "284f18f85651fe11e8a991b2adb42cb078325c996ed026d994719efcfca1d54b"
-dependencies = [
- "either",
 ]
 
 [[package]]
@@ -712,6 +711,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "papergrid"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "63709d10e2c2ec58f7bd91d8258d27ce80de090064b0ddf3a4bf38b907b61b8a"
+dependencies = [
+ "unicode-width",
+]
+
+[[package]]
 name = "percent-encoding"
 version = "2.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -921,7 +929,7 @@ dependencies = [
  "linear-map",
  "newtype_derive",
  "regex",
- "strum_macros 0.20.1",
+ "strum_macros",
  "thiserror",
  "url",
 ]
@@ -974,27 +982,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "snafu"
-version = "0.6.10"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eab12d3c261b2308b0d80c26fffb58d17eba81a4be97890101f416b478c79ca7"
-dependencies = [
- "doc-comment",
- "snafu-derive",
-]
-
-[[package]]
-name = "snafu-derive"
-version = "0.6.10"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1508efa03c362e23817f96cde18abed596a25219a8b2c66e8db33c03543d315b"
-dependencies = [
- "proc-macro2 1.0.36",
- "quote 1.0.9",
- "syn 1.0.86",
-]
-
-[[package]]
 name = "statrs"
 version = "0.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1014,18 +1001,6 @@ name = "strum"
 version = "0.18.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "57bd81eb48f4c437cadc685403cad539345bf703d78e63707418431cecd4522b"
-
-[[package]]
-name = "strum_macros"
-version = "0.18.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "87c85aa3f8ea653bfd3ddf25f7ee357ee4d204731f6aa9ad04002306f6e2774c"
-dependencies = [
- "heck",
- "proc-macro2 1.0.36",
- "quote 1.0.9",
- "syn 1.0.86",
-]
 
 [[package]]
 name = "strum_macros"
@@ -1062,6 +1037,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "tabled"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "97353139cc8a4e3f726e54f78081883d1c133b8e1834f55f168122f99f989717"
+dependencies = [
+ "papergrid",
+ "tabled_derive",
+]
+
+[[package]]
+name = "tabled_derive"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "278ea3921cee8c5a69e0542998a089f7a14fa43c9c4e4f9951295da89bd0c943"
+dependencies = [
+ "proc-macro2 1.0.36",
+ "quote 1.0.9",
+ "syn 1.0.86",
+]
+
+[[package]]
 name = "termcolor"
 version = "1.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1072,9 +1068,9 @@ dependencies = [
 
 [[package]]
 name = "textwrap"
-version = "0.14.2"
+version = "0.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0066c8d12af8b5acd21e00547c3797fde4e8677254a7ee429176ccebbe93dd80"
+checksum = "b1141d4d61095b28419e22cb0bbf02755f5e54e0526f97f1e3d1d160e60885fb"
 
 [[package]]
 name = "thiserror"
@@ -1107,17 +1103,30 @@ dependencies = [
 
 [[package]]
 name = "tidk"
-version = "0.1.5"
+version = "0.2.0"
 dependencies = [
  "bio",
+ "chrono",
  "clap",
  "cmd_lib",
  "csv",
- "itertools 0.10.0",
+ "itertools",
  "lexical-sort",
  "rayon",
  "rust-htslib",
  "serde",
+ "tabled",
+]
+
+[[package]]
+name = "time"
+version = "0.1.44"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6db9e6914ab8b1ae1c260a4ae7a49b6c5611b40328a735b21862567685e73255"
+dependencies = [
+ "libc",
+ "wasi 0.10.0+wasi-snapshot-preview1",
+ "winapi",
 ]
 
 [[package]]
@@ -1164,6 +1173,12 @@ name = "unicode-segmentation"
 version = "1.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bb0d2e7be6ae3a5fa87eed5fb451aff96f2573d2694942e40543ae0bbe19c796"
+
+[[package]]
+name = "unicode-width"
+version = "0.1.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3ed742d4ea2bd1176e236172c8429aaf54486e7ac098db29ffe6529e0ce50973"
 
 [[package]]
 name = "unicode-xid"
@@ -1215,6 +1230,12 @@ name = "wasi"
 version = "0.9.0+wasi-snapshot-preview1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cccddf32554fecc6acb585f82a32a72e28b48f8c4c1883ddfeeeaa96f7d8e519"
+
+[[package]]
+name = "wasi"
+version = "0.10.0+wasi-snapshot-preview1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1a143597ca7c7793eff794def352d41792a93c481eb1042423ff7ff72ba2c31f"
 
 [[package]]
 name = "winapi"

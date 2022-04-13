@@ -1,27 +1,20 @@
-// A telomere identification toolkit
+// Telomere Identification ToolKit
 // Max Brown 2022, Wellcome Sanger Institute
 // mb39@sanger.ac.uk
 
-use clap::{App, AppSettings, Arg};
-use std::process;
-use tidk::clades::clades::CLADES;
-use tidk::explore::explore;
-use tidk::finder::finder;
-use tidk::min::min;
-use tidk::plot::plot;
-use tidk::search::search;
-use tidk::trim::trim;
+use clap::{crate_version, Arg, Command};
+use tidk::{clades::CLADES, explore, finder, min, plot, search, trim, SubCommand};
 
 fn main() {
     // command line options
-    let matches = App::new("TIDK")
-        .version("0.1.5")
-        .global_setting(AppSettings::PropagateVersion)
-        .global_setting(AppSettings::UseLongFormatForHelpSubcommand)
+    let matches = Command::new("tidk")
+        .version(crate_version!())
+        .propagate_version(true)
+        .arg_required_else_help(true)
         .author("Max Brown <mb39@sanger.ac.uk>")
         .about("A Telomere Identification Toolkit.")
         .subcommand(
-            App::new("find")
+            Command::new("find")
                 .about("Supply the name of a clade your organsim belongs to, and this submodule will find all telomeric repeat matches for that clade.")
                 .arg(
                     Arg::new("fasta")
@@ -55,8 +48,15 @@ fn main() {
                         .long("output")
                         .takes_value(true)
                         .required_unless_present("print")
-                        .default_value("tidk-find")
                         .help("Output filename for the CSVs (without extension)."),
+                )
+                .arg(
+                    Arg::new("dir")
+                        .short('d')
+                        .long("dir")
+                        .takes_value(true)
+                        .required_unless_present("print")
+                        .help("Output directory to write files to."),
                 )
                 .arg(
                     Arg::new("print")
@@ -64,9 +64,14 @@ fn main() {
                         .long("print")
                         .help("Print a table of clades, along with their telomeric sequences."),
                 )
+                .arg(
+                    Arg::new("log")
+                        .long("log")
+                        .help("Output a log file.")
+                )
         )
         .subcommand(
-            App::new("explore")
+            Command::new("explore")
                 .about("Use a search of all substrings of length k to query a genome for a telomere sequence.")
                 .arg(
                     Arg::new("fasta")
@@ -114,7 +119,6 @@ fn main() {
                 )
                 .arg(
                     Arg::new("distance")
-                        .short('d')
                         .long("distance")
                         .takes_value(true)
                         .required(false)
@@ -126,9 +130,16 @@ fn main() {
                         .short('o')
                         .long("output")
                         .takes_value(true)
-                        .required(false)
-                        .default_value("tidk-explore")
+                        .required(true)
                         .help("Output filename for the TSVs (without extension)."),
+                )
+                .arg(
+                    Arg::new("dir")
+                        .short('d')
+                        .long("dir")
+                        .takes_value(true)
+                        .required(true)
+                        .help("Output directory to write files to."),
                 )
                 .arg(
                     Arg::new("extension")
@@ -146,9 +157,14 @@ fn main() {
                         .long("verbose")
                         .help("Print verbose output."),
                 )
+                .arg(
+                    Arg::new("log")
+                        .long("log")
+                        .help("Output a log file.")
+                )
         )
         .subcommand(
-            App::new("search")
+            Command::new("search")
                 .about("Search the input genome with a specific telomeric repeat search string.")
                 .arg(
                     Arg::new("fasta")
@@ -180,9 +196,16 @@ fn main() {
                         .short('o')
                         .long("output")
                         .takes_value(true)
-                        .required(false)
-                        .default_value("tidk-search")
+                        .required(true)
                         .help("Output filename for the CSVs (without extension)."),
+                )
+                .arg(
+                    Arg::new("dir")
+                        .short('d')
+                        .long("dir")
+                        .takes_value(true)
+                        .required(true)
+                        .help("Output directory to write files to."),
                 )
                 .arg(
                     Arg::new("extension")
@@ -194,9 +217,14 @@ fn main() {
                         .possible_values(&["csv", "bedgraph"])
                         .help("The extension, defining the output type of the file."),
                 )
+                .arg(
+                    Arg::new("log")
+                        .long("log")
+                        .help("Output a log file.")
+                )
         )
         .subcommand(
-            App::new("trim")
+            Command::new("trim")
                 .about("Trim a specific telomeric repeat from the input reads and yield reads oriented at the telomere start.")
                 .arg(
                     Arg::new("fasta")
@@ -228,7 +256,7 @@ fn main() {
                         .short('o')
                         .long("output")
                         .takes_value(true)
-                        .required(false)
+                        .required(true)
                         .default_value("tidk-trim")
                         .help("Output filename for the trimmed fasta output."),
                 )
@@ -243,7 +271,7 @@ fn main() {
                 )
         )
         .subcommand(
-            App::new("plot")
+            Command::new("plot")
                 .about("SVG plot of CSV generated from search or find.")
                 // output file name
                 .arg(
@@ -277,13 +305,13 @@ fn main() {
                         .short('o')
                         .long("output")
                         .takes_value(true)
-                        .required(false)
+                        .required(true)
                         .default_value("tidk-plot")
                         .help("Output filename for the SVG (without extension)."),
                 )
         )
         .subcommand(
-            App::new("min")
+            Command::new("min")
                 .about("Emit the canonical lexicographically minimal DNA string.")
                 // output file name
                 .arg(
@@ -312,13 +340,13 @@ fn main() {
     // feed command line options to each main function
     match matches.subcommand() {
         Some(("find", matches)) => {
-            finder::finder(matches);
+            finder::finder(matches, SubCommand::Find);
         }
         Some(("explore", matches)) => {
-            explore::explore(matches);
+            explore::explore(matches, SubCommand::Explore);
         }
         Some(("search", matches)) => {
-            search::search(matches);
+            search::search(matches, SubCommand::Search);
         }
         Some(("trim", matches)) => {
             trim::trim(matches);
@@ -330,8 +358,7 @@ fn main() {
             min::min_dna_string(matches);
         }
         _ => {
-            println!("Subcommand invalid, run with '--help' for subcommand options. Exiting.");
-            process::exit(1);
+            unreachable!()
         }
     }
 }
