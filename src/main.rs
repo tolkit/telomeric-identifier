@@ -284,7 +284,6 @@ fn main() {
                 )
                 .arg(
                     Arg::new("height")
-                        .short('h')
                         .long("height")
                         .takes_value(true)
                         .required(false)
