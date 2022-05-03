@@ -425,9 +425,9 @@ fn merge_rotated_repeats<'a>(
                     // to output later
                     output_vec_tsv.push(TsvTelomericRepeat {
                         id: id.to_owned(),
-                        start: start,
-                        end: end,
-                        count: count,
+                        start,
+                        end,
+                        count,
                         sequence: data[it].sequence.clone(),
                         seq_len: chunk_length,
                     });
@@ -456,16 +456,16 @@ fn merge_rotated_repeats<'a>(
                     // to output later
                     output_vec_tsv.push(TsvTelomericRepeat {
                         id: id.to_owned(),
-                        start: start,
-                        end: end,
-                        count: count,
+                        start,
+                        end,
+                        count,
                         sequence: data[it].sequence.clone(),
                         seq_len: chunk_length,
                     });
                     // and collect for guessing telomeric repeat
                     output_vec.push(FormatTelomericRepeat {
                         sequence: data[it].sequence.clone(),
-                        count: count,
+                        count,
                         sequence_len: chunk_length,
                     });
                 }
