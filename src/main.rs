@@ -342,10 +342,10 @@ fn main() -> Result<()> {
             explore::explore(matches, SubCommand::Explore)?;
         }
         Some(("search", matches)) => {
-            search::search(matches, SubCommand::Search);
+            search::search(matches, SubCommand::Search)?;
         }
         Some(("trim", matches)) => {
-            trim::trim(matches);
+            trim::trim(matches)?;
         }
         Some(("plot", matches)) => {
             plot::plot(matches).unwrap();
@@ -357,6 +357,6 @@ fn main() -> Result<()> {
             unreachable!()
         }
     }
-    
+
     Ok(())
 }
