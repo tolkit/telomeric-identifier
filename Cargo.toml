@@ -8,7 +8,7 @@ description = "A toolkit for finding telomeric repeats in a genome."
 homepage = "https://github.com/tolkit/telomeric-identifier"
 repository = "https://github.com/tolkit/telomeric-identifier"
 documentation = "https://github.com/tolkit/telomeric-identifier"
-keywords = ["tidk", "telomere", "telomeric repeat", "repeats", "genomics"]
+keywords = ["tidk", "telomere", "telomeric", "repeats", "genomics"]
 categories = ["command-line-utilities", "science"]
 
 [dependencies]
