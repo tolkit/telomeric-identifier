@@ -1,11 +1,8 @@
-// Telomere Identification ToolKit
-// Max Brown 2022, Wellcome Sanger Institute
-// mb39@sanger.ac.uk
-
+use anyhow::Result;
 use clap::{crate_version, Arg, Command};
 use tidk::{clades::CLADES, explore, finder, min, plot, search, trim, SubCommand};
 
-fn main() {
+fn main() -> Result<()> {
     // command line options
     let matches = Command::new("tidk")
         .version(crate_version!())
@@ -339,10 +336,10 @@ fn main() {
     // feed command line options to each main function
     match matches.subcommand() {
         Some(("find", matches)) => {
-            finder::finder(matches, SubCommand::Find);
+            finder::finder(matches, SubCommand::Find)?;
         }
         Some(("explore", matches)) => {
-            explore::explore(matches, SubCommand::Explore);
+            explore::explore(matches, SubCommand::Explore)?;
         }
         Some(("search", matches)) => {
             search::search(matches, SubCommand::Search);
@@ -354,10 +351,12 @@ fn main() {
             plot::plot(matches).unwrap();
         }
         Some(("min", matches)) => {
-            min::min_dna_string(matches);
+            min::min_dna_string(matches)?;
         }
         _ => {
             unreachable!()
         }
     }
+    
+    Ok(())
 }

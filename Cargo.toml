@@ -6,17 +6,19 @@ edition = "2021"
 
 [dependencies]
 bio = "0.41.0"
-rust-htslib = { version = "*", default-features = false }
-clap = { version = "3.1.8", features = ["cargo"] }
-rayon = "1.5.0"
+rust-htslib = { version = "0.39.5", default-features = false }
+clap = { version = "3.2.6", features = ["cargo"] }
+rayon = "1.5.3"
 # in explore::get_telomeric_repeat_estimates()
-itertools = "0.10.0"
-cmd_lib = "1.0.10"
+itertools = "0.10.3"
+cmd_lib = "1.3.0"
 # in utils::lms()
 lexical-sort = "0.3.1"
 # for plotting
-csv = "1.1.5"
-serde = "1.0.123"
+csv = "1.1.6"
+serde = "1.0.137"
 # clade table
-tabled = "0.6.0"
+tabled = "0.7.0"
 chrono = "0.4.19"
+# for errors
+anyhow = "1.0.58"

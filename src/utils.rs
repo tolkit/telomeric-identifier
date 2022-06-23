@@ -6,16 +6,16 @@ use bio::pattern_matching::kmp::KMP;
 use lexical_sort::{natural_lexical_cmp, StringSort};
 use std::cmp::min;
 
-// this does the hard lifting in `tidk search` and `tidk find`
-// take input putative telomeric repeat (motif) and search against
-// a dna sequence. Optimised for motif length.
-
+/// This does the hard lifting in `tidk search` and `tidk find`
+/// take input putative telomeric repeat (motif) and search against
+/// a dna sequence. Optimised for motif length.
 #[derive(Debug)]
 pub struct Motifs {
     pub indexes: Vec<usize>,
     pub length: usize,
 }
 
+/// Find all the occurrences of a motif in a DNA string.
 pub fn find_motifs(motif: &str, string: &str) -> Motifs {
     let motif_length = motif.len();
     let matches: Vec<usize>;
@@ -34,8 +34,7 @@ pub fn find_motifs(motif: &str, string: &str) -> Motifs {
     }
 }
 
-// calculate the reverse complement of a telomeric repeat
-
+/// Calculate the reverse complement of a telomeric repeat.
 pub fn reverse_complement(dna: &str) -> String {
     let dna_chars = dna.chars();
     let mut revcomp = Vec::new();
@@ -47,6 +46,7 @@ pub fn reverse_complement(dna: &str) -> String {
     revcomp.into_iter().collect()
 }
 
+/// Switch complementary bases in a DNA string.
 fn switch_base(c: char) -> char {
     match c {
         'A' => 'T',
@@ -58,9 +58,9 @@ fn switch_base(c: char) -> char {
     }
 }
 
-// not sure if this function is necessary, but it looks at the indexes of the motifs
-// in the genome and removes indexes which occur consecutively less than the pattern length apart
-
+/// Not sure if this function is necessary, but it looks at the indexes of the motifs
+/// in the genome and removes indexes which occur consecutively less than the pattern
+/// length apart.
 pub fn remove_overlapping_indexes(indexes: Motifs, pattern_length: usize) -> Vec<usize> {
     let mut indexes = indexes.indexes;
     let mut index = 0;
@@ -80,11 +80,11 @@ pub fn remove_overlapping_indexes(indexes: Motifs, pattern_length: usize) -> Vec
     indexes
 }
 
-// string rotation algorithms
-// see https://github.com/rrbonham96/rust-ctci/blob/a2540532b098a06c29f2a5f06f54fc5717fd7669/src/arrays_and_strings/is_rotation.rs
-// when there is an error/snp in the telomeric sequence, it causes a shift in the
-// repeat that is returned in 'explore' subcommand. This info can be leveraged to count consecutive sequences...
-
+/// A string rotation algorithm.
+/// see [here](https://github.com/rrbonham96/rust-ctci/blob/a2540532b098a06c29f2a5f06f54fc5717fd7669/src/arrays_and_strings/is_rotation.rs)
+/// When there is an error/snp in the telomeric sequence, it causes a shift in the
+/// repeat that is returned in 'explore' subcommand. This info can be leveraged to
+/// count consecutive sequences...
 pub fn string_rotation(s1: &str, s2: &str) -> bool {
     if s1.len() == s2.len() {
         let mut s2 = s2.to_string();
@@ -94,11 +94,10 @@ pub fn string_rotation(s1: &str, s2: &str) -> bool {
     false
 }
 
-// Booth's algorithm for the lexicographically minimal
-// rotation of a string. Should give us a canonical rotation
-// given a rotated string.
-// written by https://github.com/zimpha/algorithmic-library/blob/61e897983314033615bcd278d22a754bfc3c3f22/rust/src/strings/mod.rs
-
+/// Booth's algorithm for the lexicographically minimal
+/// rotation of a string. Should give us a canonical rotation
+/// given a rotated string.
+/// Taken from [here](https://github.com/zimpha/algorithmic-library/blob/61e897983314033615bcd278d22a754bfc3c3f22/rust/src/strings/mod.rs)
 fn minimal_rotation<T: Ord>(s: &[T]) -> usize {
     let n = s.len();
     let mut i = 0;
@@ -128,11 +127,10 @@ fn minimal_rotation<T: Ord>(s: &[T]) -> usize {
     }
 }
 
-// a wrapper for `minimal_rotation` which gives us a string back
-// we have two sequences we *know* are string rotations of one another
-// or string rotations of the reverse complement
-// so find the lexographically minimal version of a string/its reverse complement.
-
+/// A wrapper for `minimal_rotation` which gives us a string back
+/// we have two sequences we *know* are string rotations of one another
+/// or string rotations of the reverse complement
+/// so find the lexographically minimal version of a string/its reverse complement.
 pub fn lms(telomeric_repeat1: &str, telomeric_repeat2: &str) -> String {
     // get index of where to rotate
     // for forward
@@ -169,12 +167,10 @@ pub fn lms(telomeric_repeat1: &str, telomeric_repeat2: &str) -> String {
     strings[0].to_string()
 }
 
-// given a string (of DNA)
-// return the lexicographical minimal representation
-// accounting for both forward & rev comp.
-// I guess it will kind of be similar to the above function
-// except we will expose this to the API
-
+/// Given a string (of DNA) return the lexicographical minimal representation
+/// accounting for both forward & reverse complement.
+/// I guess it will kind of be similar to the above function
+/// except we will expose this as public.
 pub fn lex_min(dna_string: &str) -> String {
     // revcomp
     let dna_string_r = reverse_complement(dna_string);

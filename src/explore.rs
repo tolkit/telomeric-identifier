@@ -1,4 +1,5 @@
 use crate::{utils, SubCommand};
+use anyhow::{Context, Result};
 use bio::io::fasta;
 use itertools::Itertools;
 use rayon::prelude::*;
@@ -12,48 +13,65 @@ use std::sync::mpsc::channel;
 // function called from main.rs
 // TODO: sort out output file formats.
 
-pub fn explore(matches: &clap::ArgMatches, sc: SubCommand) {
+/// The function called from `tidk explore`. It takes the [`clap::Argmatches`]
+/// from the user and also a [`SubCommand`].
+pub fn explore(matches: &clap::ArgMatches, sc: SubCommand) -> Result<()> {
     // parse arguments from main
-    let input_fasta = matches.value_of("fasta").unwrap();
-    let length = matches.value_of_t("length").unwrap_or_else(|e| e.exit());
+    let input_fasta = matches
+        .value_of("fasta")
+        .context("Could not get the value of `fasta`.")?;
+    let length = matches
+        .value_of_t("length")
+        .context("Could not parse `length` as usize.")?;
 
     // if length is not set, these are the lengths (and length itself is set to zero)
-    let minimum = matches.value_of_t("minimum").unwrap_or_else(|e| e.exit());
-    let maximum: usize = matches.value_of_t("maximum").unwrap_or_else(|e| e.exit());
+    let minimum = matches
+        .value_of_t("minimum")
+        .context("Could not parse `minimum` as usize")?;
+    let maximum: usize = matches
+        .value_of_t("maximum")
+        .context("Could not parse `maximum` as usize")?;
 
-    let threshold = matches.value_of_t("threshold").unwrap_or_else(|e| e.exit());
+    let threshold = matches
+        .value_of_t("threshold")
+        .context("Could not parse `threshold` as i32")?;
 
-    let outdir = matches.value_of("dir").unwrap();
-    let output = matches.value_of("output").unwrap();
-    let extension: String = matches.value_of_t("extension").unwrap_or_else(|e| e.exit());
+    let outdir = matches
+        .value_of("dir")
+        .context("Could not get the value of `dir`.")?;
+    let output = matches
+        .value_of("output")
+        .context("Could not get the value of `output`.")?;
+    let extension: String = matches
+        .value_of_t("extension")
+        .context("Could not parse `extension` as String")?;
 
-    let dist_from_chromosome_end = matches.value_of_t("distance").unwrap_or_else(|e| e.exit());
+    let dist_from_chromosome_end = matches
+        .value_of_t("distance")
+        .context("Could not parse `distance` as usize")?;
 
     let verbose = matches.is_present("verbose");
 
     // create directory for output
-    if let Err(e) = create_dir_all(format!("{}", outdir)) {
-        eprintln!("[-]\tCreate directory error: {}", e.to_string());
-    }
+    create_dir_all(format!("{}", outdir))?;
 
     // create file
     let file_name = format!(
         "{}/{}{}{}",
         outdir, output, "_telomeric_locations.", extension
     );
-    let explore_file = File::create(&file_name).unwrap();
+    let explore_file = File::create(&file_name)?;
     let mut explore_file = LineWriter::new(explore_file);
 
     let putative_telomeric_file = format!("{}/{}{}", outdir, output, ".txt");
-    let putative_telomeric_file_txt = File::create(&putative_telomeric_file).unwrap();
+    let putative_telomeric_file_txt = File::create(&putative_telomeric_file)?;
     let mut putative_telomeric_file_txt = LineWriter::new(putative_telomeric_file_txt);
 
     // add header to txt file
     writeln!(
         putative_telomeric_file_txt,
         "telomeric_repeat\treverse_complement\tfrequency"
-    )
-    .unwrap_or_else(|_| println!("[-]\tError in writing to file."));
+    )?;
 
     // to report the telomeres...
     let mut output_vec: Vec<FormatTelomericRepeat> = Vec::new();
@@ -64,7 +82,7 @@ pub fn explore(matches: &clap::ArgMatches, sc: SubCommand) {
             "[+]\tExploring genome for potential telomeric repeats of length: {}",
             length
         );
-        let reader = fasta::Reader::from_file(input_fasta).expect("[-]\tPath invalid.");
+        let reader = fasta::Reader::from_file(input_fasta)?;
 
         // try parallelising
         let (sender, receiver) = channel();
@@ -135,7 +153,7 @@ pub fn explore(matches: &clap::ArgMatches, sc: SubCommand) {
 
             // have to call reader in the loop, as otherwise `reader` doesn't live long enough.
             // I expect it's not an expensive call anyway.
-            let reader = fasta::Reader::from_file(input_fasta).expect("[-]\tPath invalid.");
+            let reader = fasta::Reader::from_file(input_fasta)?;
 
             // try parallelising
             let (sender, receiver) = channel();
@@ -167,7 +185,7 @@ pub fn explore(matches: &clap::ArgMatches, sc: SubCommand) {
                             bed_file: vec![],
                         }),
                     )
-                    .expect("[-]\tDid not send.");
+                    .expect("Did not send!");
                 });
             // this bit is a little chaotic
             // collect output into a vector
@@ -204,32 +222,36 @@ pub fn explore(matches: &clap::ArgMatches, sc: SubCommand) {
     writeln!(
         explore_file,
         "id\tstart_pos\tend_pos\trepeat_number\trepeat_sequence\tsequence_length"
-    )
-    .unwrap_or_else(|_| println!("[-]\tError in writing to file."));
+    )?;
     for line in output_vec_bed {
         writeln!(
             explore_file,
             "{}\t{}\t{}\t{}\t{}\t{}",
             line.id, line.start, line.end, line.count, line.sequence, line.seq_len
-        )
-        .unwrap_or_else(|_| println!("[-]\tError in writing to file."));
+        )?;
     }
 
     // optional log file
-    sc.log(matches).expect("Could not make log file.");
+    sc.log(matches)?;
+
+    Ok(())
 }
 
-// split the fasta into chunks of size k, where k is the potential telomeric repeat length
-// compare consecutive iterations of these chunks and decide if they are equal
-// record the position of the repeat and the sequence.
-
+/// A chunked fasta segment with a position and a sequence.
+/// We split the fasta into chunks of size k, where k is the
+/// potential telomeric repeat length. Consecutive iterations
+/// of these chunks are compared for equality.
 pub struct ChunkedFasta {
+    /// Position of the sequence in the
+    /// fasta file.
     pub position: usize,
+    /// The sequence itself.
     pub sequence: String,
 }
 
-// is it possible to filter this iterator based on distance from chromosome end..?
-
+/// Chunk a fasta into a [`Vec<ChunkedFasta`], i.e. split a fasta into chunks
+/// and compare adjacent chunks for equality. Store the positions and sequences
+/// if they are equivalent.
 fn chunk_fasta(sequence: bio::io::fasta::Record, chunk_length: usize) -> Vec<ChunkedFasta> {
     let chunks = sequence.seq().chunks(chunk_length);
     let chunks_plus_one = sequence.seq()[chunk_length..sequence.seq().len()].chunks(chunk_length);
@@ -260,12 +282,18 @@ fn chunk_fasta(sequence: bio::io::fasta::Record, chunk_length: usize) -> Vec<Chu
 // takes the positions from chunk_fasta
 // take the current iteration position away from next iteration position
 
+/// Hold information about the repeat runs.
 pub struct RepeatRuns {
+    /// The position of the repeat.
     pub position: usize,
+    /// position[i + 1] - position[i].
     pub subtracted_position: usize,
+    /// The sequence.
     pub sequence: String,
 }
 
+/// Iterate over our [`Vec<ChunkedFasta`] on the `i`th and `i` + 1th
+/// iterations. Subtract the latter position from the former position.
 fn calculate_indexes(indexes: Vec<ChunkedFasta>) -> Vec<RepeatRuns> {
     let mut adjacent_indexes = Vec::new();
     for i in 1..indexes.len() {
@@ -280,12 +308,20 @@ fn calculate_indexes(indexes: Vec<ChunkedFasta>) -> Vec<RepeatRuns> {
     adjacent_indexes
 }
 
+/// Holds information about putative telomeric
+/// repeats and where they are in the genome.
 #[derive(Debug, Clone)]
 pub struct TelomericRepeatExplore {
+    /// Start of the telomeric repeat chunk.
     pub start: usize,
+    /// End of the telomeric repeat chunk.
     pub end: usize,
+    /// How many times the telomeric repeat
+    /// unit appeared in a given region.
     pub count: i32,
+    /// The sequence of the telomeric repeat.
     pub sequence: String,
+    /// The length of the telomeric repeat.
     pub sequence_len: usize,
 }
 
@@ -293,6 +329,10 @@ pub struct TelomericRepeatExplore {
 // if there are a run of indexes == chunk_size,
 // these are the repeats we are looking for.
 
+/// This function generates the inital telomeric repeat
+/// data. If there are runs of indexes which are equal to
+/// the chunk size, then these are the repeats we are looking
+/// for.
 fn generate_explore_data(
     adjacent_indexes: Vec<RepeatRuns>,
     id: String,
@@ -356,29 +396,47 @@ fn generate_explore_data(
 // but crucially aggregates runs of records which are
 // string rotations of one another, yielding better summaries.
 
+/// A formatted telomeric repeat.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct FormatTelomericRepeat {
+    /// The sequence.
     sequence: String,
+    /// How many telomeric repeats there were in
+    /// a consecutive run.
     count: i32,
+    /// Length of the sequence.
     sequence_len: usize,
 }
 
+/// Hold TSV data.
 #[derive(Debug, Clone)]
 pub struct TsvTelomericRepeat {
+    /// The fasta record ID.
     id: String,
+    /// Start of the telomeric repeat interval.
     start: usize,
+    /// End of the telomeric repeat interval.
     end: usize,
+    /// How many telomeric repeats in the interval.
     count: i32,
+    /// The sequence.
     sequence: String,
+    /// The length of the sequence.
     seq_len: usize,
 }
 
+/// The struct sent through the parallel iterators.
 #[derive(Debug, Clone)]
 pub struct Output {
+    /// Vector of formatted telomeric repeats.
     telomeric_repeats: Vec<FormatTelomericRepeat>,
+    /// Holds the data which will be printed as a TSV/bedgraph.
     bed_file: Vec<TsvTelomericRepeat>,
 }
 
+/// A function to merge telomeric repeats which are different
+/// in sequence, but equivalent once rotated or reverse complement
+/// and rotated, i.e. merge canonical telomeric repeats.
 fn merge_rotated_repeats<'a>(
     data: Vec<TelomericRepeatExplore>,
     chunk_length: usize,
@@ -477,11 +535,10 @@ fn merge_rotated_repeats<'a>(
     }
 }
 
-// takes the final aggregation of potential telomeric repeats across chromosomes
-// and also potentially across different lengths, and tries to find the most likely
-// telomeric repeat. See utils::format_telomeric_repeat() for the explanation of the
-// formatting.
-
+/// Takes the final aggregation of potential telomeric repeats across
+/// chromosomes and also potentially across different lengths and tries
+/// to find the most likely telomeric repeat. See [`utils::format_telomeric_repeat()`]
+/// for the explanation of the formatting.
 fn get_telomeric_repeat_estimates<T: std::io::Write>(
     telomeric_repeats: &mut Vec<FormatTelomericRepeat>,
     putative_telomeric_file: &mut LineWriter<T>,

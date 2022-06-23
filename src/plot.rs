@@ -1,31 +1,32 @@
-// read in csv and make svg plot
+use anyhow::{Context, Result};
 use csv::ReaderBuilder;
 use serde::Deserialize;
 use std::fs::File;
 use std::io::prelude::*;
 
-// plot margins
+/// The plot margins
 const MARGIN: i32 = 40;
 
-// plot is main function
-// takes a csv and produces an SVG (currently where there is only one telomeric repeat present,
-// so not suitable for `tidk find` where multiple telomeric repeats are queried)
-
-pub fn plot(matches: &clap::ArgMatches) -> std::io::Result<()> {
+/// The entry point for `tidk plot`.
+pub fn plot(matches: &clap::ArgMatches) -> Result<()> {
     // parse the command line options
-    let csv = matches.value_of("csv").unwrap();
+    let csv = matches
+        .value_of("csv")
+        .context("Could not get the value of `csv`.")?;
     // a bug here for manual input of chromosome cut-off which I can't figure out right now.
     let chromosome_cutoff = 0;
-    // value_t!(matches.value_of("length_chromosome"), i32).unwrap_or_else(|e| e.exit());
-    let height_subplot = matches.value_of_t("height").unwrap_or_else(|e| e.exit());
-    let width = matches.value_of_t("width").unwrap_or_else(|e| e.exit());
-    let output = matches.value_of("output").unwrap();
-    // sorts chromosomes lexicographically
-    // better way of doing this?
-    // let sort = value_t!(matches.value_of("sort"), bool).unwrap_or_else(|e| e.exit());
+    let height_subplot = matches
+        .value_of_t("height")
+        .context("Could not parse `height` as i32.")?;
+    let width = matches
+        .value_of_t("width")
+        .context("Could not parse `width` as i32.")?;
+    let output = matches
+        .value_of("output")
+        .context("Could not get the value of `output`.")?;
 
     // parse the csv
-    let parsed_csv = parse_csv(csv);
+    let parsed_csv = parse_csv(csv)?;
 
     // calculate the number of chromosomes to plot with the length cutoff
     let chromosome_number = chromosome_number(&parsed_csv, chromosome_cutoff);
@@ -66,14 +67,12 @@ pub fn plot(matches: &clap::ArgMatches) -> std::io::Result<()> {
             add_all_path_elements(plot_data_filtered, height_subplot as isize, width)
         );
 
-    svg_file.write_all(svg.as_bytes()).expect("unable to write");
+    svg_file.write_all(svg.as_bytes())?;
 
     Ok(())
 }
 
-// deserialise the CSV records into a struct
-// to make the names nice
-
+/// Deserialise the CSV records into a struct.
 #[derive(Debug, Deserialize)]
 pub struct TelomericRepeatRecord {
     pub id: String,
@@ -83,22 +82,23 @@ pub struct TelomericRepeatRecord {
     pub telomeric_repeat: String,
 }
 
-// this parses the csv into a Vec of Telomeric Repeat Records
-
-fn parse_csv(path: &str) -> Vec<TelomericRepeatRecord> {
-    let mut csv_reader = ReaderBuilder::new().from_path(path).unwrap();
+/// This deserializes a CSV to a [`Vec<TelomericRepeatRecord>`].
+fn parse_csv(path: &str) -> Result<Vec<TelomericRepeatRecord>> {
+    let mut csv_reader = ReaderBuilder::new().from_path(path)?;
     let mut plot_coords_vec = Vec::new();
+
     for result in csv_reader.deserialize() {
-        let record: TelomericRepeatRecord = result.unwrap();
+        let record: TelomericRepeatRecord = result?;
         plot_coords_vec.push(record);
     }
-    plot_coords_vec
+
+    Ok(plot_coords_vec)
 }
 
-// takes the parsed csv and the chromosome cutoff
-// loops through file to find the lengths of all the chromosomes (to the nearest window)
-// and reports the number of elements.
-
+/// Takes the parsed CSV and the chromosome cutoff,
+/// loops through file to find the lengths of all the
+/// chromosomes (to the nearest window) and reports the
+/// number of elements.
 fn chromosome_number(parsed_csv: &Vec<TelomericRepeatRecord>, chromosome_cutoff: i32) -> usize {
     // so we can break the loop
     let file_length = parsed_csv.len();
@@ -126,18 +126,17 @@ fn chromosome_number(parsed_csv: &Vec<TelomericRepeatRecord>, chromosome_cutoff:
     max_sizes.len() + 1
 }
 
-// scale a range [min, max] to custom range [a, b]
-// our range will be [0, height of subplots]
-
+/// Scale a range [min, max] to custom range [a, b].
+/// Our range will be [0, height of subplots].
 fn scale_y(y: f64, a: f64, b: f64, min: f64, max: f64) -> f64 {
     (((b - a) * (y - min)) / (max - min)) + a
 }
 
-// make the SVG path elements:
-// in format `Mx,yLx1,y1Lx2,y2` etc
-// this is also where the paths are scaled to
-// the plot width and subplot height
-
+/// Make the SVG path elements:
+/// `Mx,yLx1,y1Lx2,y2`...
+///
+/// This is also where the paths are scaled to
+/// the plot width and subplot height.
 fn make_path_element(
     path_vec: Vec<(i32, i32)>,
     x_max: usize,
@@ -197,8 +196,7 @@ fn make_path_element(
     Some(path)
 }
 
-// add the path elements from Vec<PlotData.path> to their SVG tags
-
+/// Add the path elements from Vec<PlotData.path> to their SVG tags.
 fn add_all_path_elements(plot_data: Vec<PlotData>, height_subplot: isize, width: i32) -> String {
     let mut all_paths = String::new();
     let length = plot_data.len();
@@ -229,29 +227,27 @@ fn add_all_path_elements(plot_data: Vec<PlotData>, height_subplot: isize, width:
     all_paths
 }
 
+/// Format [`usize`] to megabase string.
 fn format_number_to_mb(n: usize) -> String {
     format!("{:.1}Mb", (n as f64 / 1000_000f64))
 }
 
-// the final data structure
-
+/// The final data structure.
 #[derive(Debug, Clone)]
 pub struct PlotData {
-    // chromosome
+    /// Chromosome ID.
     pub id: String,
-    // svg path attribute
+    /// SVG path attribute.
     pub path: String,
-    // max length of chromosome
+    /// Max length of chromosome.
     pub max: usize,
-    // name of the telomeric repeat (not needed?)
+    /// Name of the telomeric repeat (not needed?).
     pub sequence: String,
 }
 
-// loop through the parsed CSV file
-// calculate SVG path elements on the fly
-// along with other PlotData elements
-// FIXME: the value of
-
+/// Loop through the parsed CSV file and
+/// calculate SVG path elements on the fly
+/// along with other [`PlotData`] elements.
 fn generate_plot_data(
     parsed_csv: Vec<TelomericRepeatRecord>,
     height: i32,

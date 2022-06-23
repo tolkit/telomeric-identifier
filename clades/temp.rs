@@ -2,12 +2,14 @@ use std::{
     boxed::Box,
     fmt::{self, Display},
 };
-use tabled::{Disable, Footer, MaxWidth, Modify, Rows, Table, Tabled};
+use tabled::{object::Rows, Disable, Footer, MaxWidth, Modify, Table, Tabled};
 
+/// A telomeric repeat sequence, or sequences.
 #[derive(Debug, Clone)]
 pub struct Seq<'a>(pub Box<&'a [&'a str]>);
 
 impl Seq<'_> {
+    /// Get the sequence corresponding to an index.
     pub fn get(&self, index: usize) -> Option<&&str> {
         self.0.get(index)
     }
@@ -19,12 +21,19 @@ impl Display for Seq<'_> {
         write!(f, "{}", inner)
     }
 }
+
+/// All the relevant information about a
+/// telomeric repeat sequence.
 #[derive(Debug, Clone, Tabled)]
 pub struct TelomereSeq<'a> {
     #[tabled(rename = "Clade")]
+    /// The clade a telomeric repeat belongs to.
     pub clade: &'a str,
     #[tabled(rename = "Telomeric repeat units")]
+    /// The actual telomeric repeat sequence(s).
     pub seq: Seq<'a>,
+    /// How many different telomeric repeats counted
+    /// for a clade.
     pub length: usize,
 }
 

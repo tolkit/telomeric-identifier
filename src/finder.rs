@@ -1,4 +1,5 @@
 use crate::{clades, utils, SubCommand};
+use anyhow::{Context, Result};
 use bio::io::fasta;
 use std::fs::{create_dir_all, File};
 use std::io::LineWriter;
@@ -6,25 +7,34 @@ use std::io::Write;
 use std::process;
 use std::str;
 
-// finder uses the clade specific telomere sequence and queries against the genome.
-
-pub fn finder(matches: &clap::ArgMatches, sc: SubCommand) {
+/// The entry point for `tidk find`.
+///
+/// Finder uses the clade specific telomere sequence and queries against the genome.
+pub fn finder(matches: &clap::ArgMatches, sc: SubCommand) -> Result<()> {
     // print table of telomeric sequences
     if matches.is_present("print") {
         clades::print_table();
         process::exit(1);
     }
 
-    let input_fasta = matches.value_of("fasta").unwrap();
-    let reader = fasta::Reader::from_file(input_fasta).expect("[-]\tPath invalid.");
+    let input_fasta = matches
+        .value_of("fasta")
+        .context("Could not get the value of `fasta`.")?;
+    let reader = fasta::Reader::from_file(input_fasta)?;
 
-    let clade: String = matches.value_of_t("clade").unwrap_or_else(|e| e.exit());
+    let clade: String = matches
+        .value_of_t("clade")
+        .context("Could not parse `clade` as String.")?;
     let clade_info = clades::return_telomere_sequence(&clade);
 
     if clade_info.length == 1 {
         eprintln!(
             "[+]\tSearching genome for a single telomeric repeat: {}",
-            clade_info.seq.get(0).unwrap().to_owned()
+            clade_info
+                .seq
+                .get(0)
+                .context("Could not get the first element of `seq`.")?
+                .to_owned()
         );
     } else if clade_info.length > 1 {
         eprintln!(
@@ -32,28 +42,38 @@ pub fn finder(matches: &clap::ArgMatches, sc: SubCommand) {
             clade_info.length
         );
         for telomeric_repeat in 0..clade_info.length {
-            eprintln!("[+]\t\t{}", clade_info.seq.get(telomeric_repeat).unwrap());
+            eprintln!(
+                "[+]\t\t{}",
+                clade_info.seq.get(telomeric_repeat).context(format!(
+                    "Could not get the {} element of `seq`.",
+                    telomeric_repeat
+                ))?
+            );
         }
     }
 
-    let window_size = matches.value_of_t("window").unwrap_or_else(|e| e.exit());
-    let outdir = matches.value_of("dir").unwrap();
-    let output = matches.value_of("output").unwrap();
+    let window_size = matches
+        .value_of_t("window")
+        .context("Could not parse `window` as usize.")?;
+    let outdir = matches
+        .value_of("dir")
+        .context("Could not get the value of `dir`.")?;
+    let output = matches
+        .value_of("output")
+        .context("Could not get the value of `output`.")?;
 
     // create directory for output
-    if let Err(e) = create_dir_all(format!("{}", outdir)) {
-        eprintln!("[-]\tCreate directory error: {}", e.to_string());
-    }
+    create_dir_all(format!("{}", outdir))?;
+
     // create file
     let file_name = format!("{}/{}{}", outdir, output, "_telomeric_repeat_windows.csv");
-    let finder_file = File::create(&file_name).unwrap();
+    let finder_file = File::create(&file_name)?;
     let mut finder_file = LineWriter::new(finder_file);
     // add headers
     writeln!(
         finder_file,
         "id,window,forward_repeat_number,reverse_repeat_number,telomeric_repeat"
-    )
-    .unwrap_or_else(|_| println!("[-]\tError in writing to file."));
+    )?;
 
     // extract the string from TelomereSeq struct
     // dereference here because of Box<T>
@@ -61,7 +81,7 @@ pub fn finder(matches: &clap::ArgMatches, sc: SubCommand) {
 
     // iterate over the fasta records
     for result in reader.records() {
-        let record = result.expect("[-]\tError during fasta record parsing.");
+        let record = result?;
         let id = record.id().to_owned();
 
         // fn window counter
@@ -72,20 +92,20 @@ pub fn finder(matches: &clap::ArgMatches, sc: SubCommand) {
             telomeric_repeat,
             window_size,
             id.clone(),
-        )
-        .expect("Could not write to file.");
+        )?;
 
         eprintln!("[+]\tChromosome {} processed", id);
     }
     eprintln!("[+]\tFinished searching genome.");
 
     // optional log file
-    sc.log(matches).expect("Could not make log file.");
+    sc.log(matches)?;
+
+    Ok(())
 }
 
-// creates the window iterator and iterates over each iteration of the
-// fasta file, writing on the fly.
-
+/// Creates the window iterator and iterates over each iteration of the
+/// fasta file, writing on the fly.
 fn write_window_counts<T: std::io::Write>(
     sequence: bio::io::fasta::Record,
     file: &mut LineWriter<T>,
@@ -93,7 +113,7 @@ fn write_window_counts<T: std::io::Write>(
     telomeric_repeat: &[&str],
     window_size: usize,
     id: String,
-) -> std::io::Result<()> {
+) -> Result<()> {
     // needed as in some clades there is more than one telomeric repeat sequence
     let mut telomeric_repeat_index = 0;
     loop {
@@ -104,7 +124,13 @@ fn write_window_counts<T: std::io::Write>(
 
         // get forward and reverse sequences, and length
         // to remove overlapping matches.
-        let forward_telomeric_seq = *telomeric_repeat.get(telomeric_repeat_index).unwrap();
+        let forward_telomeric_seq =
+            *telomeric_repeat
+                .get(telomeric_repeat_index)
+                .context(format!(
+                    "Could not get the telomeric repeat with index: {}.",
+                    telomeric_repeat_index
+                ))?;
         let reverse_telomeric_seq = utils::reverse_complement(forward_telomeric_seq);
         let current_telomeric_length = forward_telomeric_seq.len();
 
@@ -115,7 +141,7 @@ fn write_window_counts<T: std::io::Write>(
         // iterate over windows
         for window in windows {
             // make window uppercase
-            let windows_upper = str::from_utf8(window).unwrap().to_uppercase();
+            let windows_upper = str::from_utf8(window)?.to_uppercase();
             // for each window, find the motifs in this
             let forward_motif = utils::find_motifs(forward_telomeric_seq, &windows_upper);
             let reverse_motif = utils::find_motifs(&reverse_telomeric_seq, &windows_upper);
@@ -139,8 +165,7 @@ fn write_window_counts<T: std::io::Write>(
                 forward_repeat_number,
                 reverse_repeat_number,
                 forward_telomeric_seq
-            )
-            .unwrap_or_else(|_| println!("[-]\tError in writing to file."));
+            )?;
             // increment window
             window_index += window_size;
         }

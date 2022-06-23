@@ -1,40 +1,49 @@
-// essentially the same as finder
 use crate::{utils, SubCommand};
+use anyhow::{Context, Result};
 use bio::io::fasta;
 use std::fs::{create_dir_all, File};
 use std::io::LineWriter;
 use std::io::Write;
 use std::str;
 
-// uses a user defined string to query against the genome
-// can we provide a threshold to filter and get likely scaffolds with telomeric repeats?
+/// The entry point for `tidk search`.
+pub fn search(matches: &clap::ArgMatches, sc: SubCommand) -> Result<()> {
+    let input_fasta = matches
+        .value_of("fasta")
+        .context("Could not get the value of `fasta`.")?;
+    let reader = fasta::Reader::from_file(input_fasta)?;
 
-pub fn search(matches: &clap::ArgMatches, sc: SubCommand) {
-    let input_fasta = matches.value_of("fasta").unwrap();
-    let reader = fasta::Reader::from_file(input_fasta).expect("[-]\tPath invalid.");
-
-    let telomeric_repeat: String = matches.value_of_t("string").unwrap_or_else(|e| e.exit());
-    let extension: String = matches.value_of_t("extension").unwrap_or_else(|e| e.exit());
+    let telomeric_repeat: String = matches
+        .value_of_t("string")
+        .context("Could not parse `string` as String.")?;
+    let extension: String = matches
+        .value_of_t("extension")
+        .context("Could not parse `extension` as String.")?;
 
     eprintln!(
         "[+]\tSearching genome for telomeric repeat: {}",
         telomeric_repeat
     );
 
-    let window_size: usize = matches.value_of_t("window").unwrap_or_else(|e| e.exit());
-    let outdir = matches.value_of("dir").unwrap();
-    let output = matches.value_of("output").unwrap();
+    let window_size: usize = matches
+        .value_of_t("window")
+        .context("Could not parse `window` as usize.")?;
+    let outdir = matches
+        .value_of("dir")
+        .context("Could not get the value of `dir`.")?;
+    let output = matches
+        .value_of("output")
+        .context("Could not get the value of `output`.")?;
 
     // create directory for output
-    if let Err(e) = create_dir_all(format!("{}", outdir)) {
-        eprintln!("[-]\tCreate directory error: {}", e.to_string());
-    }
+    create_dir_all(format!("{}", outdir))?;
+
     // create file
     let file_name = format!(
         "{}/{}{}{}",
         outdir, output, "_telomeric_repeat_windows.", extension
     );
-    let search_file = File::create(&file_name).unwrap();
+    let search_file = File::create(&file_name)?;
     let mut search_file = LineWriter::new(search_file);
 
     // add headers if extension/file type is a csv
@@ -42,13 +51,12 @@ pub fn search(matches: &clap::ArgMatches, sc: SubCommand) {
         writeln!(
             search_file,
             "id,window,forward_repeat_number,reverse_repeat_number,telomeric_repeat"
-        )
-        .unwrap_or_else(|_| eprintln!("[-]\tError in writing to file."));
+        )?;
     }
 
     // iterate over the fasta records
     for result in reader.records() {
-        let record = result.expect("[-]\tError during fasta record parsing.");
+        let record = result?;
         let id = record.id().to_owned();
 
         // fn window counter
@@ -59,20 +67,20 @@ pub fn search(matches: &clap::ArgMatches, sc: SubCommand) {
             window_size,
             id.clone(),
             &extension,
-        )
-        .expect("[-]\tCould not write to file.");
+        )?;
 
         eprintln!("[+]\tChromosome {} processed", id);
     }
     eprintln!("[+]\tFinished searching genome.");
 
     // optional log file
-    sc.log(matches).expect("Could not make log file.");
+    sc.log(matches)?;
+
+    Ok(())
 }
 
-// iterate over windows, counting occurrences of specified string
-// and write to file on the fly.
-
+/// Iterate over windows, counting occurrences of specified string
+/// and write to file on the fly.
 fn write_window_counts<T: std::io::Write>(
     sequence: bio::io::fasta::Record,
     file: &mut LineWriter<T>,
@@ -80,7 +88,7 @@ fn write_window_counts<T: std::io::Write>(
     window_size: usize,
     id: String,
     extension: &str,
-) -> std::io::Result<()> {
+) -> Result<()> {
     // get forward and reverse sequences, and length
     // to remove overlapping matches.
     let forward_telomeric_seq = telomeric_repeat;
@@ -94,7 +102,7 @@ fn write_window_counts<T: std::io::Write>(
     // iterate over windows
     for window in windows {
         // make window uppercase
-        let windows_upper = str::from_utf8(window).unwrap().to_uppercase();
+        let windows_upper = str::from_utf8(window)?.to_uppercase();
         // for each window, find the motifs in this
         let forward_motif = utils::find_motifs(forward_telomeric_seq, &windows_upper);
         let reverse_motif = utils::find_motifs(&reverse_telomeric_seq, &windows_upper);
@@ -119,8 +127,7 @@ fn write_window_counts<T: std::io::Write>(
                 forward_repeat_number,
                 reverse_repeat_number,
                 forward_telomeric_seq
-            )
-            .unwrap_or_else(|_| eprintln!("[-]\tError in writing to file."));
+            )?;
         } else {
             // for bedgraph only four columns, and sum the forward & reverse for convenience
             writeln!(
@@ -130,8 +137,7 @@ fn write_window_counts<T: std::io::Write>(
                 window_index - window_size,
                 window_index,
                 forward_repeat_number + reverse_repeat_number,
-            )
-            .unwrap_or_else(|_| eprintln!("[-]\tError in writing to file."));
+            )?;
         }
         // increment window
         window_index += window_size;

@@ -1,12 +1,15 @@
 use crate::utils;
+use anyhow::{bail, Result};
 use bio::io::fasta;
 use std::fs::File;
 use std::io::{self, BufRead, BufReader};
 use std::str;
 
-// presumably want  revcomp too?
-// use atty as well?
-pub fn min_dna_string(matches: &clap::ArgMatches) {
+// TODO:
+// detect STDIN with atty.
+
+/// The entry point for `tidk min`.
+pub fn min_dna_string(matches: &clap::ArgMatches) -> Result<()> {
     let input_file = matches.value_of("file");
     let is_fasta = matches.is_present("fasta");
 
@@ -15,25 +18,25 @@ pub fn min_dna_string(matches: &clap::ArgMatches) {
         Some(file) => {
             let fasta = file.ends_with(".fa") || file.ends_with(".fasta");
             if fasta {
-                let reader = fasta::Reader::from_file(file).expect("[-]\tPath invalid.");
+                let reader = fasta::Reader::from_file(file)?;
                 for record in reader.records() {
-                    let record = record.expect("[-]\tError during fasta record parsing.");
-                    let seq = str::from_utf8(record.seq()).expect("Invalid UTF-8.");
+                    let record = record?;
+                    let seq = str::from_utf8(record.seq())?;
                     let res = utils::lex_min(seq);
                     // write to fasta
                     let mut writer = fasta::Writer::new(io::stdout());
-                    writer
-                        .write(record.id(), Some("tidk-min"), res.as_bytes())
-                        .expect("Error writing record.");
+                    writer.write(record.id(), Some("tidk-min"), res.as_bytes())?;
                 }
+                Ok(())
             } else {
-                let file = File::open(file).expect("Could not open file.");
+                let file = File::open(file)?;
                 let reader = BufReader::new(file);
                 for line in reader.lines() {
-                    let line = line.expect("Could not read line.");
+                    let line = line?;
                     let res = utils::lex_min(&line);
                     println!("{}", res);
                 }
+                Ok(())
             }
         }
         None => {
@@ -42,28 +45,29 @@ pub fn min_dna_string(matches: &clap::ArgMatches) {
                     let res = utils::lex_min(el);
                     println!("{}", res);
                 }
+                Ok(())
             } else {
                 if is_fasta {
                     let mut records = fasta::Reader::new(io::stdin()).records();
                     while let Some(Ok(record)) = records.next() {
-                        let seq = str::from_utf8(record.seq()).expect("Invalid UTF-8.");
+                        let seq = str::from_utf8(record.seq())?;
                         let res = utils::lex_min(seq);
                         // write to fasta
                         let mut writer = fasta::Writer::new(io::stdout());
-                        writer
-                            .write(record.id(), Some("tidk-min"), res.as_bytes())
-                            .expect("Error writing record.");
+                        writer.write(record.id(), Some("tidk-min"), res.as_bytes())?;
                     }
+                    Ok(())
                 } else {
                     let stdin = io::stdin();
                     for line in stdin.lock().lines() {
-                        let line = line.expect("Could not read line from STDIN.");
+                        let line = line?;
                         if line.chars().nth(0) == ">".chars().next() {
-                            panic!("Use -x option, for fasta input.")
+                            bail!("Use -x option, for fasta input.")
                         }
                         let res = utils::lex_min(&line);
                         println!("{}", res);
                     }
+                    Ok(())
                 }
             }
         }
