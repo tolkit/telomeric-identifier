@@ -1,8 +1,15 @@
 [package]
 name = "tidk"
-version = "0.2.0"
+version = "0.2.1"
 authors = ["Max Brown <mb39@sanger.ac.uk>"]
 edition = "2021"
+license = "MIT"
+description = "A toolkit for finding telomeric repeats in a genome."
+homepage = "https://github.com/tolkit/telomeric-identifier"
+repository = "https://github.com/tolkit/telomeric-identifier"
+documentation = "https://github.com/tolkit/telomeric-identifier"
+keywords = ["tidk", "telomere", "telomeric repeat", "repeats", "genomics"]
+categories = ["command-line-utilities", "science"]
 
 [dependencies]
 bio = "0.41.0"
