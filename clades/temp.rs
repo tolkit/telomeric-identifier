@@ -40,6 +40,8 @@ pub struct TelomereSeq<'a> {
 // automated input start
 // automated input end
 
+/// Pretty print a table containing all the information about
+/// telomeric repeats that we currently have.
 pub fn print_table() {
     let mut clade_vec = Vec::new();
 
