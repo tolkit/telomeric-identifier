@@ -129,6 +129,7 @@ pub const CLADES: &[&str] = &[
     "Procellariiformes",
     "Pyrenomonadales",
     "Ranunculales",
+    "Raphidioptera",
     "Rhabditida",
     "Rodentia",
     "Rosales",
@@ -207,7 +208,7 @@ pub fn return_telomere_sequence(clade: &str) -> TelomereSeq {
         "Araneae" => TelomereSeq {
             clade: "Araneae",
             seq: Seq(Box::new(&[
-                "AACAT", "AATAT", "ACTAT", "ACATG", "AAAGC", "AACTTGT",
+                "AAAGC", "AATAT", "AACAT", "ACATG", "AACTTGT", "ACTAT",
             ])),
             length: 6,
         },
@@ -226,8 +227,8 @@ pub fn return_telomere_sequence(clade: &str) -> TelomereSeq {
 
         "Asterales" => TelomereSeq {
             clade: "Asterales",
-            seq: Seq(Box::new(&["AAACCCT"])),
-            length: 1,
+            seq: Seq(Box::new(&["AACCCTG", "AAACCCT"])),
+            length: 2,
         },
 
         "Atheriniformes" => TelomereSeq {
@@ -310,7 +311,7 @@ pub fn return_telomere_sequence(clade: &str) -> TelomereSeq {
 
         "Cheilostomatida" => TelomereSeq {
             clade: "Cheilostomatida",
-            seq: Seq(Box::new(&["AAACCCC", "AAGTCT", "ACAGT"])),
+            seq: Seq(Box::new(&["AAACCCC", "ACAGT", "AAGTCT"])),
             length: 3,
         },
 
@@ -328,35 +329,37 @@ pub fn return_telomere_sequence(clade: &str) -> TelomereSeq {
 
         "Chlamydomonadales" => TelomereSeq {
             clade: "Chlamydomonadales",
-            seq: Seq(Box::new(&["AAGGATGGAC", "AACCCT"])),
+            seq: Seq(Box::new(&["AACCCT", "AAGGATGGAC"])),
             length: 2,
         },
 
         "Coleoptera" => TelomereSeq {
             clade: "Coleoptera",
             seq: Seq(Box::new(&[
-                "AACAGACCCG",
-                "ACCTG",
+                "AGATATAT",
                 "AACTCC",
-                "ACTATG",
-                "AAAGGTCACC",
-                "AAATAACT",
+                "AACAT",
+                "AAAGGAC",
+                "AGGATG",
+                "ACTCTG",
                 "AAAAATAC",
-                "AAGTCG",
-                "AAAAATTC",
+                "AACCT",
                 "AAGTAATC",
                 "ACAGACTG",
-                "AGATATAT",
-                "AAAGGAC",
-                "ACTCTG",
-                "AACCT",
-                "AACCC",
-                "AAATAATT",
-                "AAGACAGAC",
-                "AACAT",
                 "AAGTC",
+                "ACTATG",
+                "AAATAACT",
+                "AACCCAGACCT",
+                "AAGACAGAC",
+                "AAATAATT",
+                "AAAAATTC",
+                "ACCTG",
+                "AAGTCG",
+                "AACAGACCCG",
+                "AAAGGTCACC",
+                "AACCC",
             ])),
-            length: 20,
+            length: 22,
         },
 
         "Comatulida" => TelomereSeq {
@@ -367,7 +370,7 @@ pub fn return_telomere_sequence(clade: &str) -> TelomereSeq {
 
         "Crassiclitellata" => TelomereSeq {
             clade: "Crassiclitellata",
-            seq: Seq(Box::new(&["AACTC", "AAGGAC", "AACCCT"])),
+            seq: Seq(Box::new(&["AAGGAC", "AACCCT", "AACTC"])),
             length: 3,
         },
 
@@ -403,13 +406,13 @@ pub fn return_telomere_sequence(clade: &str) -> TelomereSeq {
 
         "Ericales" => TelomereSeq {
             clade: "Ericales",
-            seq: Seq(Box::new(&["AAACCCT", "AAGCATT", "AAGCATC"])),
+            seq: Seq(Box::new(&["AAGCATT", "AAGCATC", "AAACCCT"])),
             length: 3,
         },
 
         "Eucoccidiorida" => TelomereSeq {
             clade: "Eucoccidiorida",
-            seq: Seq(Box::new(&["AAGGAGGAGACAAT", "AAACCCT"])),
+            seq: Seq(Box::new(&["AAACCCT", "AAGGAGGAGACAAT"])),
             length: 2,
         },
 
@@ -427,7 +430,7 @@ pub fn return_telomere_sequence(clade: &str) -> TelomereSeq {
 
         "Fabales" => TelomereSeq {
             clade: "Fabales",
-            seq: Seq(Box::new(&["AAACCCT", "AACCT"])),
+            seq: Seq(Box::new(&["AACCT", "AAACCCT"])),
             length: 2,
         },
 
@@ -445,7 +448,7 @@ pub fn return_telomere_sequence(clade: &str) -> TelomereSeq {
 
         "Fucales" => TelomereSeq {
             clade: "Fucales",
-            seq: Seq(Box::new(&["ACACT", "AACCCT"])),
+            seq: Seq(Box::new(&["AACCCT", "ACACT"])),
             length: 2,
         },
 
@@ -463,7 +466,7 @@ pub fn return_telomere_sequence(clade: &str) -> TelomereSeq {
 
         "Geraniales" => TelomereSeq {
             clade: "Geraniales",
-            seq: Seq(Box::new(&["AAACCCT", "AACCCT"])),
+            seq: Seq(Box::new(&["AACCCT", "AAACCCT"])),
             length: 2,
         },
 
@@ -482,21 +485,22 @@ pub fn return_telomere_sequence(clade: &str) -> TelomereSeq {
         "Hemiptera" => TelomereSeq {
             clade: "Hemiptera",
             seq: Seq(Box::new(&[
-                "AAACCACCCT",
-                "AAAATTGTTGATGGAGATCATAC",
-                "AAGAATATAGAAT",
+                "AATAC",
                 "AACCATCCCT",
-                "AATATAG",
-                "AACACTCCCT",
                 "AACCTACCT",
+                "AACACTCCCT",
+                "AACCT",
                 "AAGAAT",
                 "AAACCTATCC",
-                "AATAC",
-                "ACCGAG",
+                "AAGAATATAGAAT",
+                "AAAATTGTTGATGGAGATCATAC",
                 "ACAGAGAGGC",
-                "AACCT",
+                "AAATAACT",
+                "AAACCACCCT",
+                "ACCGAG",
+                "AATATAG",
             ])),
-            length: 13,
+            length: 14,
         },
 
         "Heteronemertea" => TelomereSeq {
@@ -514,38 +518,47 @@ pub fn return_telomere_sequence(clade: &str) -> TelomereSeq {
         "Hymenoptera" => TelomereSeq {
             clade: "Hymenoptera",
             seq: Seq(Box::new(&[
-                "AGGGATATC",
-                "ACTCT",
-                "AGAGAT",
-                "AACCCTGACGC",
-                "ACCTG",
-                "AACCCT",
-                "AACGAGTCG",
-                "AAAACG",
                 "AACGAC",
-                "AAACGAGTC",
-                "AACCCAGACGC",
-                "ACGATG",
-                "AAAGGC",
-                "AACCCAGACCC",
-                "AAAAAC",
-                "AACCCCAACCT",
-                "AACCT",
-                "AACCCAGACCT",
-                "AACCC",
-                "ACATCGT",
-                "AACCCGAACCT",
-                "AACGTAT",
+                "ACTCT",
                 "AATAT",
-                "AAACAC",
+                "AACCCTGACGC",
+                "AACGAGTCG",
+                "AGAGAT",
+                "ACACGC",
+                "AACTCACT",
+                "ACGATG",
+                "ACCAGTG",
+                "ACATCGT",
+                "AAAAT",
+                "ACTCTG",
+                "AACCT",
+                "AACCC",
+                "AACCCGAACCT",
                 "ACAGAG",
+                "AAAGGC",
+                "AACGTAT",
+                "AACCCAGACCT",
+                "AACCCAGACCC",
+                "AGCCG",
+                "ACCTG",
+                "AACCCCAACCT",
+                "AAAACG",
+                "AAACCTAACCC",
+                "AACCCAGACGC",
+                "AAACG",
+                "AACCCT",
+                "AGGGATATC",
+                "AAACAC",
+                "AAAAAC",
+                "AAACCTAACC",
+                "AAACGAGTC",
             ])),
-            length: 25,
+            length: 34,
         },
 
         "Hypnales" => TelomereSeq {
             clade: "Hypnales",
-            seq: Seq(Box::new(&["AAACCCT", "AACAG"])),
+            seq: Seq(Box::new(&["AACAG", "AAACCCT"])),
             length: 2,
         },
 
@@ -563,7 +576,7 @@ pub fn return_telomere_sequence(clade: &str) -> TelomereSeq {
 
         "Lamiales" => TelomereSeq {
             clade: "Lamiales",
-            seq: Seq(Box::new(&["AAACCCT", "AACCCTAAT"])),
+            seq: Seq(Box::new(&["AACCCTAAT", "AAACCCT"])),
             length: 2,
         },
 
@@ -571,14 +584,16 @@ pub fn return_telomere_sequence(clade: &str) -> TelomereSeq {
             clade: "Lepidoptera",
             seq: Seq(Box::new(&[
                 "AACCATCCCT",
-                "AACGTGAT",
                 "ACTCTG",
                 "AACCT",
-                "ACATC",
                 "AAGACGGTAAGTGTGTATGTATGT",
+                "AACGTGAT",
+                "ACATC",
                 "AACTCG",
+                "AAACCACCCT",
+                "ACACCT",
             ])),
-            length: 7,
+            length: 9,
         },
 
         "Liliales" => TelomereSeq {
@@ -613,7 +628,7 @@ pub fn return_telomere_sequence(clade: &str) -> TelomereSeq {
 
         "Malpighiales" => TelomereSeq {
             clade: "Malpighiales",
-            seq: Seq(Box::new(&["AAACCCT", "AACCCT"])),
+            seq: Seq(Box::new(&["AACCCT", "AAACCCT"])),
             length: 2,
         },
 
@@ -745,8 +760,20 @@ pub fn return_telomere_sequence(clade: &str) -> TelomereSeq {
 
         "Ranunculales" => TelomereSeq {
             clade: "Ranunculales",
-            seq: Seq(Box::new(&["AAACCCT", "AACCCTG", "AACCCCG", "AAACCG"])),
-            length: 4,
+            seq: Seq(Box::new(&[
+                "AAAACCCTACCCG",
+                "AACCCTG",
+                "AAACCG",
+                "AAACCCT",
+                "AACCCCG",
+            ])),
+            length: 5,
+        },
+
+        "Raphidioptera" => TelomereSeq {
+            clade: "Raphidioptera",
+            seq: Seq(Box::new(&["AAGACAGT"])),
+            length: 1,
         },
 
         "Rhabditida" => TelomereSeq {
@@ -799,7 +826,7 @@ pub fn return_telomere_sequence(clade: &str) -> TelomereSeq {
 
         "Solanales" => TelomereSeq {
             clade: "Solanales",
-            seq: Seq(Box::new(&["AAACCCT", "AACCCTG"])),
+            seq: Seq(Box::new(&["AACCCTG", "AAACCCT"])),
             length: 2,
         },
 
@@ -823,7 +850,7 @@ pub fn return_telomere_sequence(clade: &str) -> TelomereSeq {
 
         "Trichoptera" => TelomereSeq {
             clade: "Trichoptera",
-            seq: Seq(Box::new(&["AACCT", "AATGACAGCG"])),
+            seq: Seq(Box::new(&["AATGACAGCG", "AACCT"])),
             length: 2,
         },
 
