@@ -3,6 +3,7 @@ use anyhow::{Context, Result};
 use bio::io::fasta;
 use itertools::Itertools;
 use rayon::prelude::*;
+use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::fs::{create_dir_all, File};
 use std::io::prelude::*;
@@ -10,8 +11,7 @@ use std::io::LineWriter;
 use std::str;
 use std::sync::mpsc::channel;
 
-// function called from main.rs
-// TODO: sort out output file formats.
+static REPEAT_PERIOD_THRESHOLD: usize = 3;
 
 /// The function called from `tidk explore`. It takes the [`clap::Argmatches`]
 /// from the user and also a [`SubCommand`].
@@ -217,18 +217,22 @@ pub fn explore(matches: &clap::ArgMatches, sc: SubCommand) -> Result<()> {
     println!("[+]\tGenerating output");
     // print likely telomeric repeat
     // costly calculation if threshold is too low.
-    get_telomeric_repeat_estimates(&mut output_vec, &mut putative_telomeric_file_txt);
+    get_telomeric_repeat_estimates(&mut output_vec, &mut putative_telomeric_file_txt)?;
     // write the bed file
     writeln!(
         explore_file,
         "id\tstart_pos\tend_pos\trepeat_number\trepeat_sequence\tsequence_length"
     )?;
+    // here we need to filter too.
     for line in output_vec_bed {
-        writeln!(
-            explore_file,
-            "{}\t{}\t{}\t{}\t{}\t{}",
-            line.id, line.start, line.end, line.count, line.sequence, line.seq_len
-        )?;
+        // check the basic repeat period is greater than 3
+        if !line.check_telomeric_repeat() {
+            writeln!(
+                explore_file,
+                "{}\t{}\t{}\t{}\t{}\t{}",
+                line.id, line.start, line.end, line.count, line.sequence, line.seq_len
+            )?;
+        }
     }
 
     // optional log file
@@ -425,6 +429,16 @@ pub struct TsvTelomericRepeat {
     seq_len: usize,
 }
 
+impl TsvTelomericRepeat {
+    /// a quick method to check if
+    /// a sequence looks like it is not
+    /// a telomeric repeat
+    fn check_telomeric_repeat(&self) -> bool {
+        let repeat_period = check_repeats(&self.sequence);
+        repeat_period < REPEAT_PERIOD_THRESHOLD
+    }
+}
+
 /// The struct sent through the parallel iterators.
 #[derive(Debug, Clone)]
 pub struct Output {
@@ -542,10 +556,10 @@ fn merge_rotated_repeats<'a>(
 fn get_telomeric_repeat_estimates<T: std::io::Write>(
     telomeric_repeats: &mut Vec<FormatTelomericRepeat>,
     putative_telomeric_file: &mut LineWriter<T>,
-) {
+) -> Result<()> {
     if telomeric_repeats.is_empty() {
         eprintln!("[-]\tNo potential telomeric repeats found.");
-        return;
+        return Ok(());
     }
 
     // we need to compare all elements against all others
@@ -591,6 +605,8 @@ fn get_telomeric_repeat_estimates<T: std::io::Write>(
 
     let mut count_vec: Vec<_> = map.iter().collect();
     count_vec.sort_by(|a, b| b.1.cmp(a.1));
+    // filter out simple telomeric repeat units.
+    filter_count_vec(&mut count_vec)?;
 
     let mut it = 0;
     for (seq, count) in count_vec {
@@ -606,8 +622,42 @@ fn get_telomeric_repeat_estimates<T: std::io::Write>(
             seq,
             utils::reverse_complement(seq),
             count
-        )
-        .unwrap_or_else(|_| println!("[-]\tError in writing to file."));
+        )?;
         it += 1;
     }
+
+    Ok(())
+}
+
+/// Returns the shortest period of repetition in s.
+/// If s does not repeat, returns the number of characters in s.
+/// 
+/// See https://users.rust-lang.org/t/checking-simple-repeats-in-strings/79729
+/// for a small discussion.
+fn check_repeats(s: &str) -> usize {
+    let mut delays: BTreeMap<_, std::str::Chars> = BTreeMap::new();
+    for (i, c) in s.chars().enumerate() {
+        delays.retain(|_, iter| iter.next() == Some(c));
+        delays.insert(i + 1, s.chars());
+    }
+    delays.into_keys().next().unwrap()
+}
+
+/// A function to filter the final count vec of certain kinds of
+/// short repeat which are probably not telomeric repeats. Should
+/// clean up output dramatically.
+///
+/// These are:
+/// - Monomeric
+/// - Dimeric
+/// - Trimeric
+fn filter_count_vec(v: &mut Vec<(&String, &i32)>) -> Result<()> {
+    // monomers
+    // not sure I need this.
+    v.retain(|(s, _)| {
+        let repeat_period = check_repeats(s);
+        repeat_period > REPEAT_PERIOD_THRESHOLD
+    });
+
+    Ok(())
 }
