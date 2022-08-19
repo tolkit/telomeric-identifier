@@ -15,8 +15,6 @@ fn main() -> Result<()> {
                 .about("Supply the name of a clade your organsim belongs to, and this submodule will find all telomeric repeat matches for that clade.")
                 .arg(
                     Arg::new("fasta")
-                        .short('f')
-                        .long("fasta")
                         .takes_value(true)
                         .required_unless_present("print")
                         .help("The input fasta file."),
@@ -45,7 +43,7 @@ fn main() -> Result<()> {
                         .long("output")
                         .takes_value(true)
                         .required_unless_present("print")
-                        .help("Output filename for the CSVs (without extension)."),
+                        .help("Output filename for the TSVs (without extension)."),
                 )
                 .arg(
                     Arg::new("dir")
@@ -69,11 +67,9 @@ fn main() -> Result<()> {
         )
         .subcommand(
             Command::new("explore")
-                .about("Use a search of all substrings of length k to query a genome for a telomere sequence.")
+                .about("Use a range of kmer sizes to find potential telomeric repeats.")
                 .arg(
                     Arg::new("fasta")
-                        .short('f')
-                        .long("fasta")
                         .takes_value(true)
                         .required(true)
                         .help("The input fasta file."),
@@ -165,8 +161,6 @@ fn main() -> Result<()> {
                 .about("Search the input genome with a specific telomeric repeat search string.")
                 .arg(
                     Arg::new("fasta")
-                        .short('f')
-                        .long("fasta")
                         .takes_value(true)
                         .required(true)
                         .help("The input fasta file."),
@@ -194,7 +188,7 @@ fn main() -> Result<()> {
                         .long("output")
                         .takes_value(true)
                         .required(true)
-                        .help("Output filename for the CSVs (without extension)."),
+                        .help("Output filename for the TSVs (without extension)."),
                 )
                 .arg(
                     Arg::new("dir")
@@ -210,8 +204,8 @@ fn main() -> Result<()> {
                         .long("extension")
                         .takes_value(true)
                         .required_unless_present("print")
-                        .default_value("csv")
-                        .possible_values(&["csv", "bedgraph"])
+                        .default_value("tsv")
+                        .possible_values(&["tsv", "bedgraph"])
                         .help("The extension, defining the output type of the file."),
                 )
                 .arg(
@@ -225,8 +219,6 @@ fn main() -> Result<()> {
                 .about("Trim a specific telomeric repeat from the input reads and yield reads oriented at the telomere start.")
                 .arg(
                     Arg::new("fasta")
-                        .short('f')
-                        .long("fasta")
                         .takes_value(true)
                         .required(true)
                         .help("The input fasta file."),
@@ -269,15 +261,15 @@ fn main() -> Result<()> {
         )
         .subcommand(
             Command::new("plot")
-                .about("SVG plot of CSV generated from search or find.")
+                .about("SVG plot of TSV generated from search or find.")
                 // output file name
                 .arg(
-                    Arg::new("csv")
-                        .short('c')
-                        .long("csv")
+                    Arg::new("tsv")
+                        .short('t')
+                        .long("tsv")
                         .takes_value(true)
                         .required(true)
-                        .help("The input CSV file."),
+                        .help("The input TSV file."),
                 )
                 .arg(
                     Arg::new("height")
@@ -348,7 +340,7 @@ fn main() -> Result<()> {
             trim::trim(matches)?;
         }
         Some(("plot", matches)) => {
-            plot::plot(matches).unwrap();
+            plot::plot(matches)?;
         }
         Some(("min", matches)) => {
             min::min_dna_string(matches)?;
