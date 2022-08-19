@@ -10,9 +10,9 @@ const MARGIN: i32 = 40;
 /// The entry point for `tidk plot`.
 pub fn plot(matches: &clap::ArgMatches) -> Result<()> {
     // parse the command line options
-    let csv = matches
-        .value_of("csv")
-        .context("Could not get the value of `csv`.")?;
+    let tsv = matches
+        .value_of("tsv")
+        .context("Could not get the value of `tsv`.")?;
     // a bug here for manual input of chromosome cut-off which I can't figure out right now.
     let chromosome_cutoff = 0;
     let height_subplot = matches
@@ -25,17 +25,17 @@ pub fn plot(matches: &clap::ArgMatches) -> Result<()> {
         .value_of("output")
         .context("Could not get the value of `output`.")?;
 
-    // parse the csv
-    let parsed_csv = parse_csv(csv)?;
+    // parse the tsv
+    let parsed_tsv = parse_tsv(tsv)?;
 
     // calculate the number of chromosomes to plot with the length cutoff
-    let chromosome_number = chromosome_number(&parsed_csv, chromosome_cutoff);
+    let chromosome_number = chromosome_number(&parsed_tsv, chromosome_cutoff);
 
     // height of plot
     let height: i32 = height_subplot * chromosome_number as i32 + (2 * MARGIN);
 
     // generate the plot data (see struct PlotData)
-    let plot_data = generate_plot_data(parsed_csv, height, width, height_subplot);
+    let plot_data = generate_plot_data(parsed_tsv, height, width, height_subplot);
 
     // filter the data based on the cutoff
     let plot_data_filtered: Vec<PlotData> = plot_data
@@ -72,7 +72,7 @@ pub fn plot(matches: &clap::ArgMatches) -> Result<()> {
     Ok(())
 }
 
-/// Deserialise the CSV records into a struct.
+/// Deserialise the TSV records into a struct.
 #[derive(Debug, Deserialize)]
 pub struct TelomericRepeatRecord {
     pub id: String,
@@ -82,12 +82,12 @@ pub struct TelomericRepeatRecord {
     pub telomeric_repeat: String,
 }
 
-/// This deserializes a CSV to a [`Vec<TelomericRepeatRecord>`].
-fn parse_csv(path: &str) -> Result<Vec<TelomericRepeatRecord>> {
-    let mut csv_reader = ReaderBuilder::new().from_path(path)?;
+/// This deserializes a TSV to a [`Vec<TelomericRepeatRecord>`].
+fn parse_tsv(path: &str) -> Result<Vec<TelomericRepeatRecord>> {
+    let mut tsv_reader = ReaderBuilder::new().delimiter(b'\t').from_path(path)?;
     let mut plot_coords_vec = Vec::new();
 
-    for result in csv_reader.deserialize() {
+    for result in tsv_reader.deserialize() {
         let record: TelomericRepeatRecord = result?;
         plot_coords_vec.push(record);
     }
@@ -95,13 +95,13 @@ fn parse_csv(path: &str) -> Result<Vec<TelomericRepeatRecord>> {
     Ok(plot_coords_vec)
 }
 
-/// Takes the parsed CSV and the chromosome cutoff,
+/// Takes the parsed TSV and the chromosome cutoff,
 /// loops through file to find the lengths of all the
 /// chromosomes (to the nearest window) and reports the
 /// number of elements.
-fn chromosome_number(parsed_csv: &Vec<TelomericRepeatRecord>, chromosome_cutoff: i32) -> usize {
+fn chromosome_number(parsed_tsv: &Vec<TelomericRepeatRecord>, chromosome_cutoff: i32) -> usize {
     // so we can break the loop
-    let file_length = parsed_csv.len();
+    let file_length = parsed_tsv.len();
     // the iteration of the loop
     let mut it = 0usize;
     // a mutable vector to calculate svg path attribute
@@ -112,12 +112,12 @@ fn chromosome_number(parsed_csv: &Vec<TelomericRepeatRecord>, chromosome_cutoff:
             break;
         }
 
-        if parsed_csv[it].id == parsed_csv[it + 1].id {
+        if parsed_tsv[it].id == parsed_tsv[it + 1].id {
             it += 1;
             continue;
         } else {
-            if parsed_csv[it].window > chromosome_cutoff {
-                max_sizes.push(parsed_csv[it].window);
+            if parsed_tsv[it].window > chromosome_cutoff {
+                max_sizes.push(parsed_tsv[it].window);
             }
             it += 1;
         }
@@ -245,17 +245,17 @@ pub struct PlotData {
     pub sequence: String,
 }
 
-/// Loop through the parsed CSV file and
+/// Loop through the parsed TSV file and
 /// calculate SVG path elements on the fly
 /// along with other [`PlotData`] elements.
 fn generate_plot_data(
-    parsed_csv: Vec<TelomericRepeatRecord>,
+    parsed_tsv: Vec<TelomericRepeatRecord>,
     height: i32,
     width: i32,
     height_per_plot: i32,
 ) -> Vec<PlotData> {
     // so we can break the loop
-    let file_length = parsed_csv.len();
+    let file_length = parsed_tsv.len();
     // the iteration of the loop
     let mut it = 0usize;
     // a mutable vector to calculate svg path attribute
@@ -280,38 +280,38 @@ fn generate_plot_data(
             };
 
             plot_data.push(PlotData {
-                id: parsed_csv[it].id.clone(),
+                id: parsed_tsv[it].id.clone(),
                 path: path_element,
-                max: parsed_csv[it].window as usize,
-                sequence: parsed_csv[it].telomeric_repeat.clone(),
+                max: parsed_tsv[it].window as usize,
+                sequence: parsed_tsv[it].telomeric_repeat.clone(),
             });
             break;
         }
 
-        if parsed_csv[it].id == parsed_csv[it + 1].id {
+        if parsed_tsv[it].id == parsed_tsv[it + 1].id {
             // calculate y max
-            if y_max <= parsed_csv[it].forward_repeat_number + parsed_csv[it].reverse_repeat_number
+            if y_max <= parsed_tsv[it].forward_repeat_number + parsed_tsv[it].reverse_repeat_number
             {
-                y_max = parsed_csv[it].forward_repeat_number + parsed_csv[it].reverse_repeat_number;
+                y_max = parsed_tsv[it].forward_repeat_number + parsed_tsv[it].reverse_repeat_number;
             }
             // window (i.e x)
             // forward + reverse counts
             path_vec.push((
-                parsed_csv[it].window,
-                parsed_csv[it].forward_repeat_number + parsed_csv[it].reverse_repeat_number,
+                parsed_tsv[it].window,
+                parsed_tsv[it].forward_repeat_number + parsed_tsv[it].reverse_repeat_number,
             ));
             it += 1;
         } else {
             // want to calculate y_max and...
-            if y_max <= parsed_csv[it].forward_repeat_number + parsed_csv[it].reverse_repeat_number
+            if y_max <= parsed_tsv[it].forward_repeat_number + parsed_tsv[it].reverse_repeat_number
             {
-                y_max = parsed_csv[it].forward_repeat_number + parsed_csv[it].reverse_repeat_number;
+                y_max = parsed_tsv[it].forward_repeat_number + parsed_tsv[it].reverse_repeat_number;
             }
             // the path vector for the last element (seems important for things which occur at the
             // ends of chromosomes right..? DOH)
             path_vec.push((
-                parsed_csv[it].window,
-                parsed_csv[it].forward_repeat_number + parsed_csv[it].reverse_repeat_number,
+                parsed_tsv[it].window,
+                parsed_tsv[it].forward_repeat_number + parsed_tsv[it].reverse_repeat_number,
             ));
             // calculate the svg path element from path_vec here
             // there may not be a path element
@@ -329,10 +329,10 @@ fn generate_plot_data(
             };
 
             plot_data.push(PlotData {
-                id: parsed_csv[it].id.clone(),
+                id: parsed_tsv[it].id.clone(),
                 path: path_element,
-                max: parsed_csv[it].window as usize,
-                sequence: parsed_csv[it].telomeric_repeat.clone(),
+                max: parsed_tsv[it].window as usize,
+                sequence: parsed_tsv[it].telomeric_repeat.clone(),
             });
             path_vec.clear();
             it += 1;

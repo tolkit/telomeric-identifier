@@ -66,13 +66,13 @@ pub fn finder(matches: &clap::ArgMatches, sc: SubCommand) -> Result<()> {
     create_dir_all(format!("{}", outdir))?;
 
     // create file
-    let file_name = format!("{}/{}{}", outdir, output, "_telomeric_repeat_windows.csv");
+    let file_name = format!("{}/{}{}", outdir, output, "_telomeric_repeat_windows.tsv");
     let finder_file = File::create(&file_name)?;
     let mut finder_file = LineWriter::new(finder_file);
     // add headers
     writeln!(
         finder_file,
-        "id,window,forward_repeat_number,reverse_repeat_number,telomeric_repeat"
+        "id\twindow\tforward_repeat_number\treverse_repeat_number\ttelomeric_repeat"
     )?;
 
     // extract the string from TelomereSeq struct
@@ -159,7 +159,7 @@ fn write_window_counts<T: std::io::Write>(
             // write to file
             writeln!(
                 file,
-                "{},{},{},{},{}",
+                "{}\t{}\t{}\t{}\t{}",
                 id,
                 window_index,
                 forward_repeat_number,

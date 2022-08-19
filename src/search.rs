@@ -47,10 +47,10 @@ pub fn search(matches: &clap::ArgMatches, sc: SubCommand) -> Result<()> {
     let mut search_file = LineWriter::new(search_file);
 
     // add headers if extension/file type is a csv
-    if extension == "csv" {
+    if extension == "tsv" {
         writeln!(
             search_file,
-            "id,window,forward_repeat_number,reverse_repeat_number,telomeric_repeat"
+            "id\twindow\tforward_repeat_number\treverse_repeat_number\ttelomeric_repeat"
         )?;
     }
 
@@ -118,10 +118,10 @@ fn write_window_counts<T: std::io::Write>(
         let forward_repeat_number = forward_motif_noverlap.len();
         let reverse_repeat_number = reverse_motif_noverlap.len();
         // write to file
-        if extension == "csv" {
+        if extension == "tsv" {
             writeln!(
                 file,
-                "{},{},{},{},{}",
+                "{}\t{}\t{}\t{}\t{}",
                 id,
                 window_index,
                 forward_repeat_number,
