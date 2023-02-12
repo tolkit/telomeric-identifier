@@ -64,7 +64,7 @@ gb_class = df.groupby(["order"])["telo_seq_1"].apply(list)
 print(
     """
     /// All the clades for which we have data.
-    pub const CLADES: &[&str] = &["""
+    pub static CLADES: &[&str] = &["""
 )
 
 for i, v in gb_class.items():

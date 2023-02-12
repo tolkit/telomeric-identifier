@@ -1,7 +1,7 @@
-use anyhow::{Context, Result};
+use anyhow::Result;
 use chrono::Local;
 use clap::crate_version;
-use std::io::Write;
+use std::{io::Write, path::PathBuf};
 
 /// A module where the clades are defined, and their
 /// respective telomeric repeats are enumerated.
@@ -30,7 +30,7 @@ pub enum SubCommand {
 }
 
 /// A date format.
-const DATE_FORMAT_STR: &'static str = "%Y-%m-%d: %H:%M:%S";
+const DATE_FORMAT_STR: &str = "%Y-%m-%d: %H:%M:%S";
 
 // this is not the optimal way to do this... but oh well.
 // add optional log file directory
@@ -38,29 +38,26 @@ impl SubCommand {
     /// Make a log dependent on the subcommand that was run.
     pub fn log(&self, matches: &clap::ArgMatches) -> Result<()> {
         // only if log CLI arg is present
-        if matches.is_present("log") {
+        if matches.get_flag("log") {
             match self {
                 SubCommand::Find => {
                     let output = matches
-                        .value_of("output")
-                        .context("Could not get the value of `output`")?;
-
-                    let outdir = matches
-                        .value_of("dir")
-                        .context("Could not get the value of `dir`")?;
+                        .get_one::<PathBuf>("output")
+                        .expect("errored by clap");
+                    let outdir = matches.get_one::<PathBuf>("dir").expect("errored by clap");
                     let input_fasta = matches
-                        .value_of("fasta")
-                        .context("Could not get the value of `fasta`")?;
-                    let clade: String = matches
-                        .value_of_t("clade")
-                        .context("Could not parse `clade` as a String.")?;
+                        .get_one::<PathBuf>("fasta")
+                        .expect("errored by clap");
+                    let clade = matches.get_one::<String>("clade").expect("errored by clap");
                     let clade_info = clades::return_telomere_sequence(&clade);
-                    let window_size: usize = matches
-                        .value_of_t("window")
-                        .context("Could not parse `window` as usize.")?;
+                    let window_size = *matches.get_one::<usize>("window").expect("errored by clap");
 
-                    let file_name =
-                        format!("{}/{}{}", outdir, output, "_telomeric_repeat_windows.csv");
+                    let file_name = format!(
+                        "{}/{}{}",
+                        outdir.display(),
+                        output.display(),
+                        "_telomeric_repeat_windows.csv"
+                    );
 
                     let log_string = format!(
                         r#"tidk version: {}
@@ -74,14 +71,15 @@ Date: {}
                         crate_version!(),
                         format!("{}", file_name),
                         Local::now().format(DATE_FORMAT_STR),
-                        input_fasta,
+                        input_fasta.display(),
                         window_size,
                         clade,
                         clade_info.seq.0.join(", ")
                     );
 
                     // create file
-                    let log_file_name = format!("{}/{}{}", outdir, output, ".log");
+                    let log_file_name =
+                        format!("{}/{}{}", outdir.display(), output.display(), ".log");
                     let log_file = std::fs::File::create(&log_file_name)?;
                     let mut log_file = std::io::LineWriter::new(log_file);
 
@@ -90,39 +88,40 @@ Date: {}
                     Ok(eprintln!("[+]\tLog file written to: {}", log_file_name))
                 }
                 SubCommand::Explore => {
-                    let outdir = matches
-                        .value_of("dir")
-                        .context("Could not get the value of `dir`")?;
+                    let outdir = matches.get_one::<PathBuf>("dir").expect("errored by clap");
                     let input_fasta = matches
-                        .value_of("fasta")
-                        .context("Could not get the value of `fasta`")?;
-                    let length: Option<String> = matches.value_of_t("length").ok();
+                        .get_one::<PathBuf>("fasta")
+                        .expect("errored by clap");
+                    let length = matches.get_one::<usize>("length");
 
-                    let minimum: Option<String> = matches.value_of_t("minimum").ok();
-                    let maximum: Option<String> = matches.value_of_t("maximum").ok();
+                    let minimum = matches.get_one::<usize>("minimum");
+                    let maximum = matches.get_one::<usize>("maximum");
 
-                    let threshold: Option<String> = matches.value_of_t("threshold").ok();
+                    let threshold = matches.get_one::<i32>("threshold");
                     let output = matches
-                        .value_of("output")
-                        .context("Could not get the value of `output`")?;
-                    let extension: String = matches
-                        .value_of_t("extension")
-                        .context("Could not parse `extension` as a String.")?;
+                        .get_one::<PathBuf>("output")
+                        .expect("errored by clap");
+                    let extension = matches
+                        .get_one::<String>("extension")
+                        .expect("errored by clap");
 
-                    let dist_from_chromosome_end: Option<String> =
-                        matches.value_of_t("distance").ok();
+                    let dist_from_chromosome_end = matches.get_one::<usize>("distance");
 
                     // create file
                     let explore_file_name = format!(
                         "{}/{}{}{}",
-                        outdir, output, "_telomeric_locations.", extension
+                        outdir.display(),
+                        output.display(),
+                        "_telomeric_locations.",
+                        extension
                     );
 
-                    let putative_telomeric_file = format!("./explore/{}{}", output, ".txt");
+                    let putative_telomeric_file =
+                        format!("./explore/{}{}", output.display(), ".txt");
 
                     let log_string = format!(
                         r#"tidk version: {}
-Log information for output files: {}
+Log information for output files: {}, {}
 Date: {}
 `tidk explore` was run with the following parameters:
     Input fasta: {}
@@ -132,18 +131,40 @@ Date: {}
     Threshold: {}
     Searching at {}bp distance from chromosome end"#,
                         crate_version!(),
-                        format!("{}, {}", explore_file_name, putative_telomeric_file),
+                        explore_file_name,
+                        putative_telomeric_file,
                         Local::now().format(DATE_FORMAT_STR),
-                        input_fasta,
-                        length.unwrap_or("-".into()),
-                        minimum.unwrap_or("-".into()),
-                        maximum.unwrap_or("-".into()),
-                        threshold.unwrap_or("No threshold specified".into()),
-                        dist_from_chromosome_end.unwrap_or("No distance specified".into()),
+                        input_fasta.display(),
+                        {
+                            if let Some(l) = length {
+                                l.to_string()
+                            } else {
+                                "None".into()
+                            }
+                        },
+                        {
+                            if let Some(min) = minimum {
+                                min.to_string()
+                            } else {
+                                "None".into()
+                            }
+                        },
+                        {
+                            if let Some(max) = maximum {
+                                max.to_string()
+                            } else {
+                                "None".into()
+                            }
+                        },
+                        // safely unwrap
+                        threshold.unwrap(),
+                        // safely unwrap
+                        dist_from_chromosome_end.unwrap(),
                     );
 
                     // create file
-                    let log_file_name = format!("{}/{}{}", outdir, output, ".log");
+                    let log_file_name =
+                        format!("{}/{}{}", outdir.display(), output.display(), ".log");
                     let log_file = std::fs::File::create(&log_file_name)?;
                     let mut log_file = std::io::LineWriter::new(log_file);
 
@@ -153,30 +174,28 @@ Date: {}
                 }
                 SubCommand::Search => {
                     let input_fasta = matches
-                        .value_of("fasta")
-                        .context("Could not get the value of `fasta`")?;
+                        .get_one::<PathBuf>("fasta")
+                        .expect("errored by clap");
+                    let telomeric_repeat = matches
+                        .get_one::<String>("string")
+                        .expect("errored by clap");
+                    let extension = matches
+                        .get_one::<String>("extension")
+                        .expect("errored by clap");
 
-                    let telomeric_repeat: String = matches
-                        .value_of_t("string")
-                        .context("Could not parse `string` as a String.")?;
-                    let extension: String = matches
-                        .value_of_t("extension")
-                        .context("Could not parse `extension` as a String.")?;
-
-                    let window_size: usize = matches
-                        .value_of_t("window")
-                        .context("Could not parse `window-size` as usize.")?;
-                    let outdir = matches
-                        .value_of("dir")
-                        .context("Could not get the value of `dir`")?;
+                    let window_size = matches.get_one::<usize>("window").expect("errored by clap");
+                    let outdir = matches.get_one::<PathBuf>("dir").expect("errored by clap");
                     let output = matches
-                        .value_of("output")
-                        .context("Could not get the value of `output`")?;
+                        .get_one::<PathBuf>("output")
+                        .expect("errored by clap");
 
                     // create file
                     let file_name = format!(
                         "{}/{}{}{}",
-                        outdir, output, "_telomeric_repeat_windows.", extension
+                        outdir.display(),
+                        output.display(),
+                        "_telomeric_repeat_windows.",
+                        extension
                     );
 
                     let log_string = format!(
@@ -191,13 +210,14 @@ Date: {}
                         crate_version!(),
                         file_name,
                         Local::now().format(DATE_FORMAT_STR),
-                        input_fasta,
+                        input_fasta.display(),
                         telomeric_repeat,
                         window_size
                     );
 
                     // create file
-                    let log_file_name = format!("{}/{}{}", outdir, output, ".log");
+                    let log_file_name =
+                        format!("{}/{}{}", outdir.display(), output.display(), ".log");
                     let log_file = std::fs::File::create(&log_file_name)?;
                     let mut log_file = std::io::LineWriter::new(log_file);
 

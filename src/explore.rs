@@ -1,5 +1,5 @@
 use crate::{utils, SubCommand};
-use anyhow::{Context, Result};
+use anyhow::Result;
 use bio::io::fasta;
 use itertools::Itertools;
 use rayon::prelude::*;
@@ -8,6 +8,7 @@ use std::collections::HashMap;
 use std::fs::{create_dir_all, File};
 use std::io::prelude::*;
 use std::io::LineWriter;
+use std::path::PathBuf;
 use std::str;
 use std::sync::mpsc::channel;
 
@@ -18,53 +19,52 @@ static REPEAT_PERIOD_THRESHOLD: usize = 3;
 pub fn explore(matches: &clap::ArgMatches, sc: SubCommand) -> Result<()> {
     // parse arguments from main
     let input_fasta = matches
-        .value_of("fasta")
-        .context("Could not get the value of `fasta`.")?;
-    let length = matches
-        .value_of_t("length")
-        .context("Could not parse `length` as usize.")?;
+        .get_one::<PathBuf>("fasta")
+        .expect("errored by clap");
+    let length = *matches.get_one::<usize>("length").expect("errored by clap");
 
     // if length is not set, these are the lengths (and length itself is set to zero)
-    let minimum = matches
-        .value_of_t("minimum")
-        .context("Could not parse `minimum` as usize")?;
-    let maximum: usize = matches
-        .value_of_t("maximum")
-        .context("Could not parse `maximum` as usize")?;
+    let minimum = *matches
+        .get_one::<usize>("minimum")
+        .expect("errored by clap");
+    let maximum = *matches
+        .get_one::<usize>("maximum")
+        .expect("errored by clap");
 
-    let threshold = matches
-        .value_of_t("threshold")
-        .context("Could not parse `threshold` as i32")?;
+    let threshold = *matches
+        .get_one::<i32>("threshold")
+        .expect("errored by clap");
 
-    let outdir = matches
-        .value_of("dir")
-        .context("Could not get the value of `dir`.")?;
+    let outdir = matches.get_one::<PathBuf>("dir").expect("errored by clap");
     let output = matches
-        .value_of("output")
-        .context("Could not get the value of `output`.")?;
-    let extension: String = matches
-        .value_of_t("extension")
-        .context("Could not parse `extension` as String")?;
+        .get_one::<PathBuf>("output")
+        .expect("errored by clap");
+    let extension = matches
+        .get_one::<String>("extension")
+        .expect("errored by clap");
 
-    let dist_from_chromosome_end = matches
-        .value_of_t("distance")
-        .context("Could not parse `distance` as usize")?;
+    let dist_from_chromosome_end = *matches
+        .get_one::<usize>("distance")
+        .expect("errored by clap");
 
-    let verbose = matches.is_present("verbose");
+    let verbose = matches.get_flag("verbose");
 
     // create directory for output
-    create_dir_all(format!("{}", outdir))?;
+    create_dir_all(outdir)?;
 
     // create file
     let file_name = format!(
         "{}/{}{}{}",
-        outdir, output, "_telomeric_locations.", extension
+        outdir.display(),
+        output.display(),
+        "_telomeric_locations.",
+        extension
     );
-    let explore_file = File::create(&file_name)?;
+    let explore_file = File::create(file_name)?;
     let mut explore_file = LineWriter::new(explore_file);
 
-    let putative_telomeric_file = format!("{}/{}{}", outdir, output, ".txt");
-    let putative_telomeric_file_txt = File::create(&putative_telomeric_file)?;
+    let putative_telomeric_file = format!("{}/{}{}", outdir.display(), output.display(), ".txt");
+    let putative_telomeric_file_txt = File::create(putative_telomeric_file)?;
     let mut putative_telomeric_file_txt = LineWriter::new(putative_telomeric_file_txt);
 
     // add header to txt file
@@ -125,21 +125,15 @@ pub fn explore(matches: &clap::ArgMatches, sc: SubCommand) -> Result<()> {
         // so it can be cloned here
         // to extract repeats
         let mut telomeric_repeats = output
-            .clone()
             .iter()
-            .map(|a| a.telomeric_repeats.clone())
-            .flatten()
+            .flat_map(|a| a.telomeric_repeats.clone())
             .collect();
         // and appended to the output vec
         output_vec.append(&mut telomeric_repeats);
 
         // and also cloned here
-        let mut bed_file: Vec<TsvTelomericRepeat> = output
-            .clone()
-            .iter()
-            .map(|a| a.bed_file.clone())
-            .flatten()
-            .collect();
+        let mut bed_file: Vec<TsvTelomericRepeat> =
+            output.iter().flat_map(|a| a.bed_file.clone()).collect();
         // to get a bed file of all potential repeat locations.
         output_vec_bed.append(&mut bed_file);
     } else {
@@ -196,8 +190,7 @@ pub fn explore(matches: &clap::ArgMatches, sc: SubCommand) -> Result<()> {
             let mut telomeric_repeats = output
                 .clone()
                 .iter()
-                .map(|a| a.telomeric_repeats.clone())
-                .flatten()
+                .flat_map(|a| a.telomeric_repeats.clone())
                 .collect();
             // and appended to the output vec
             output_vec.append(&mut telomeric_repeats);
@@ -206,8 +199,7 @@ pub fn explore(matches: &clap::ArgMatches, sc: SubCommand) -> Result<()> {
             let mut bed_file: Vec<TsvTelomericRepeat> = output
                 .clone()
                 .iter()
-                .map(|a| a.bed_file.clone())
-                .flatten()
+                .flat_map(|a| a.bed_file.clone())
                 .collect();
             // to get a bed file of all potential repeat locations.
             output_vec_bed.append(&mut bed_file);
@@ -245,6 +237,7 @@ pub fn explore(matches: &clap::ArgMatches, sc: SubCommand) -> Result<()> {
 /// We split the fasta into chunks of size k, where k is the
 /// potential telomeric repeat length. Consecutive iterations
 /// of these chunks are compared for equality.
+#[derive(Debug, PartialEq, Eq)]
 pub struct ChunkedFasta {
     /// Position of the sequence in the
     /// fasta file.
@@ -256,6 +249,8 @@ pub struct ChunkedFasta {
 /// Chunk a fasta into a [`Vec<ChunkedFasta`], i.e. split a fasta into chunks
 /// and compare adjacent chunks for equality. Store the positions and sequences
 /// if they are equivalent.
+///
+/// TODO: here we can filter the chunks iterator on distance from
 fn chunk_fasta(sequence: bio::io::fasta::Record, chunk_length: usize) -> Vec<ChunkedFasta> {
     let chunks = sequence.seq().chunks(chunk_length);
     let chunks_plus_one = sequence.seq()[chunk_length..sequence.seq().len()].chunks(chunk_length);
@@ -267,7 +262,8 @@ fn chunk_fasta(sequence: bio::io::fasta::Record, chunk_length: usize) -> Vec<Chu
     let mut pos = 0;
 
     // this is the heavy lifting.
-    for (_i, (a, b)) in chunks.zip(chunks_plus_one).enumerate() {
+    // can use the enumerate to check whether the position is < dist from start or > dist from end.
+    for (a, b) in chunks.zip(chunks_plus_one) {
         // if chunk contains N, skip.
         if a.contains(&78) || b.contains(&78) {
             pos += chunk_length;
@@ -287,6 +283,7 @@ fn chunk_fasta(sequence: bio::io::fasta::Record, chunk_length: usize) -> Vec<Chu
 // take the current iteration position away from next iteration position
 
 /// Hold information about the repeat runs.
+#[derive(Debug, PartialEq, Eq)]
 pub struct RepeatRuns {
     /// The position of the repeat.
     pub position: usize,
@@ -310,6 +307,61 @@ fn calculate_indexes(indexes: Vec<ChunkedFasta>) -> Vec<RepeatRuns> {
         }
     }
     adjacent_indexes
+}
+
+fn calculate_indexes2(
+    indexes: Vec<ChunkedFasta>,
+    chunk_length: usize,
+    verbose: bool,
+    id: String,
+    dist_from_chromosome_end: usize,
+    seq_len: usize,
+) -> Option<Vec<(usize, usize, String)>> {
+    let mut start = 0usize;
+    let mut end = 0usize;
+
+    let mut collection: Vec<(usize, usize, String)> = Vec::new();
+
+    let mut iter = indexes.iter().zip(indexes.iter().skip(1)).peekable();
+
+    while let Some((
+        ChunkedFasta {
+            position: position1,
+            sequence: sequence1,
+        },
+        ChunkedFasta {
+            position: position2,
+            sequence: sequence2,
+        },
+    )) = iter.next()
+    {
+        // don't bother getting sequence away from the ends
+        if start > dist_from_chromosome_end && end < seq_len - dist_from_chromosome_end {
+            continue;
+        }
+
+        if iter.peek().is_none() {
+            end = *position2 + chunk_length;
+            collection.push((start, end, sequence1.to_string()));
+        } else if sequence1 == sequence2 {
+            continue;
+        } else if sequence1 != sequence2 {
+            end = *position1 + chunk_length;
+            collection.push((start, end, sequence1.to_string()));
+            start = *position2;
+        }
+    }
+    if collection.is_empty() {
+        if verbose {
+            eprintln!(
+                "[-]\t\tChromosome {}: No consecutive repeats of length {} were identified.",
+                id, chunk_length
+            );
+        }
+        None
+    } else {
+        Some(collection)
+    }
 }
 
 /// Holds information about putative telomeric
@@ -380,9 +432,9 @@ fn generate_explore_data(
             end = adjacent_indexes[it].position;
             if count > local_threshold {
                 potential_telomeric_repeats.push(TelomericRepeatExplore {
-                    start: start,
-                    end: end,
-                    count: count,
+                    start,
+                    end,
+                    count,
                     sequence: adjacent_indexes[it].sequence.clone(),
                     sequence_len: chunk_length,
                 });
@@ -451,10 +503,10 @@ pub struct Output {
 /// A function to merge telomeric repeats which are different
 /// in sequence, but equivalent once rotated or reverse complement
 /// and rotated, i.e. merge canonical telomeric repeats.
-fn merge_rotated_repeats<'a>(
+fn merge_rotated_repeats(
     data: Vec<TelomericRepeatExplore>,
     chunk_length: usize,
-    id: &'a str,
+    id: &str,
     threshold: i32,
     seq_len: usize,
     dist_from_chromosome_end: usize,
@@ -468,8 +520,7 @@ fn merge_rotated_repeats<'a>(
         if verbose {
             eprintln!(
                 "[-]\t\tChromosome {}: No consecutive repeats of length {} were identified.",
-                id.clone(),
-                chunk_length
+                id, chunk_length
             );
         }
         return None;
@@ -492,24 +543,24 @@ fn merge_rotated_repeats<'a>(
         // explicit break in the loop
         if it == data.len() - 1 {
             // if all telomere repeat to the end, this is not printed.
-            if count > threshold {
-                if start < dist_from_chromosome_end || end > seq_len - dist_from_chromosome_end {
-                    // to output later
-                    output_vec_tsv.push(TsvTelomericRepeat {
-                        id: id.to_owned(),
-                        start,
-                        end,
-                        count,
-                        sequence: data[it].sequence.clone(),
-                        seq_len: chunk_length,
-                    });
-                    // and collect for guessing telomeric repeat
-                    output_vec.push(FormatTelomericRepeat {
-                        sequence: data[it].sequence.clone(),
-                        count: count,
-                        sequence_len: chunk_length,
-                    });
-                }
+            if count > threshold
+                && (start < dist_from_chromosome_end || end > seq_len - dist_from_chromosome_end)
+            {
+                // to output later
+                output_vec_tsv.push(TsvTelomericRepeat {
+                    id: id.to_owned(),
+                    start,
+                    end,
+                    count,
+                    sequence: data[it].sequence.clone(),
+                    seq_len: chunk_length,
+                });
+                // and collect for guessing telomeric repeat
+                output_vec.push(FormatTelomericRepeat {
+                    sequence: data[it].sequence.clone(),
+                    count,
+                    sequence_len: chunk_length,
+                });
             }
             break Some(Output {
                 telomeric_repeats: output_vec,
@@ -523,24 +574,24 @@ fn merge_rotated_repeats<'a>(
             it += 1;
         } else {
             end = data[it].end;
-            if count > threshold {
-                if start < dist_from_chromosome_end || end > seq_len - dist_from_chromosome_end {
-                    // to output later
-                    output_vec_tsv.push(TsvTelomericRepeat {
-                        id: id.to_owned(),
-                        start,
-                        end,
-                        count,
-                        sequence: data[it].sequence.clone(),
-                        seq_len: chunk_length,
-                    });
-                    // and collect for guessing telomeric repeat
-                    output_vec.push(FormatTelomericRepeat {
-                        sequence: data[it].sequence.clone(),
-                        count,
-                        sequence_len: chunk_length,
-                    });
-                }
+            if count > threshold
+                && (start < dist_from_chromosome_end || end > seq_len - dist_from_chromosome_end)
+            {
+                // to output later
+                output_vec_tsv.push(TsvTelomericRepeat {
+                    id: id.to_owned(),
+                    start,
+                    end,
+                    count,
+                    sequence: data[it].sequence.clone(),
+                    seq_len: chunk_length,
+                });
+                // and collect for guessing telomeric repeat
+                output_vec.push(FormatTelomericRepeat {
+                    sequence: data[it].sequence.clone(),
+                    count,
+                    sequence_len: chunk_length,
+                });
             }
             it += 1;
             start_index = it;
@@ -608,8 +659,7 @@ fn get_telomeric_repeat_estimates<T: std::io::Write>(
     // filter out simple telomeric repeat units.
     filter_count_vec(&mut count_vec)?;
 
-    let mut it = 0;
-    for (seq, count) in count_vec {
+    for (it, (seq, count)) in count_vec.into_iter().enumerate() {
         if it == 0 {
             println!(
                 "[+]\tThe likely telomeric repeat is: {}, found {} times.",
@@ -623,7 +673,6 @@ fn get_telomeric_repeat_estimates<T: std::io::Write>(
             utils::reverse_complement(seq),
             count
         )?;
-        it += 1;
     }
 
     Ok(())
@@ -631,7 +680,7 @@ fn get_telomeric_repeat_estimates<T: std::io::Write>(
 
 /// Returns the shortest period of repetition in s.
 /// If s does not repeat, returns the number of characters in s.
-/// 
+///
 /// See https://users.rust-lang.org/t/checking-simple-repeats-in-strings/79729
 /// for a small discussion.
 fn check_repeats(s: &str) -> usize {
@@ -660,4 +709,93 @@ fn filter_count_vec(v: &mut Vec<(&String, &i32)>) -> Result<()> {
     });
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const R1: &str = "AAAAAAAA";
+    const R2: &str = "ATATATAT";
+    const R3: &str = "AATAATAAT";
+    // A tiny genome with telomeric repeats at the end
+    const GENOME: &str =
+        "AACCTAACCTAACCTAACCTTATAGGGACATTGACCGAAGGGGGCACATAGACAACCTAACCTAACCTAACCT";
+
+    fn generate_chunks() -> Vec<ChunkedFasta> {
+        let record = bio::io::fasta::Record::with_attrs("id1", None, GENOME.as_bytes());
+        chunk_fasta(record, 5)
+    }
+
+    #[test]
+    fn check_repeat_period1() {
+        let p = check_repeats(R1);
+        assert_eq!(p, 1)
+    }
+    #[test]
+    fn check_repeat_period2() {
+        let p = check_repeats(R2);
+        assert_eq!(p, 2)
+    }
+    #[test]
+    fn check_repeat_period3() {
+        let p = check_repeats(R3);
+        assert_eq!(p, 3)
+    }
+    #[test]
+    fn test_chunk_fasta() {
+        let chunks = generate_chunks();
+        assert_eq!(
+            vec![
+                ChunkedFasta {
+                    position: 0,
+                    sequence: "AACCT".into()
+                },
+                ChunkedFasta {
+                    position: 5,
+                    sequence: "AACCT".into()
+                },
+                ChunkedFasta {
+                    position: 10,
+                    sequence: "AACCT".into()
+                },
+                // we don't hit AACCT modulo 5
+                // when we hit the telomeric repeats at the
+                // other end of the genome
+                // we do however hit the string rotated version
+                // of AACCT; CCTAA
+                ChunkedFasta {
+                    position: 55,
+                    sequence: "CCTAA".into()
+                },
+                ChunkedFasta {
+                    position: 60,
+                    sequence: "CCTAA".into()
+                }
+            ],
+            chunks
+        )
+    }
+    #[test]
+    fn test_index_calculation1() {
+        let chunks = generate_chunks();
+        let indices = calculate_indexes(chunks);
+        assert_eq!(
+            indices,
+            vec![RepeatRuns {
+                position: 0,
+                subtracted_position: 0,
+                sequence: "".into()
+            }]
+        )
+    }
+    #[test]
+    fn test_index_calculation2() {
+        let chunks = generate_chunks();
+        let indices = calculate_indexes2(chunks, 5, false, "test".into(), 20, GENOME.len()).unwrap();
+        assert_eq!(
+            indices,
+            vec![(0, 15, "AACCT".into()), (55, 65, "CCTAA".into())]
+        )
+    }
 }

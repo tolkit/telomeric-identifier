@@ -1,8 +1,9 @@
-use anyhow::{Context, Result};
+use anyhow::Result;
 use csv::ReaderBuilder;
 use serde::Deserialize;
 use std::fs::File;
 use std::io::prelude::*;
+use std::path::PathBuf;
 
 /// The plot margins
 const MARGIN: i32 = 40;
@@ -10,23 +11,17 @@ const MARGIN: i32 = 40;
 /// The entry point for `tidk plot`.
 pub fn plot(matches: &clap::ArgMatches) -> Result<()> {
     // parse the command line options
-    let tsv = matches
-        .value_of("tsv")
-        .context("Could not get the value of `tsv`.")?;
+    let tsv = matches.get_one::<PathBuf>("tsv").expect("errored by clap");
     // a bug here for manual input of chromosome cut-off which I can't figure out right now.
     let chromosome_cutoff = 0;
-    let height_subplot = matches
-        .value_of_t("height")
-        .context("Could not parse `height` as i32.")?;
-    let width = matches
-        .value_of_t("width")
-        .context("Could not parse `width` as i32.")?;
+    let height_subplot = matches.get_one::<i32>("height").expect("defualted by clap");
+    let width = matches.get_one::<i32>("width").expect("defaulted by clap");
     let output = matches
-        .value_of("output")
-        .context("Could not get the value of `output`.")?;
+        .get_one::<PathBuf>("output")
+        .expect("defaulted by clap");
 
     // parse the tsv
-    let parsed_tsv = parse_tsv(tsv)?;
+    let parsed_tsv = parse_tsv(tsv.to_path_buf())?;
 
     // calculate the number of chromosomes to plot with the length cutoff
     let chromosome_number = chromosome_number(&parsed_tsv, chromosome_cutoff);
@@ -35,17 +30,16 @@ pub fn plot(matches: &clap::ArgMatches) -> Result<()> {
     let height: i32 = height_subplot * chromosome_number as i32 + (2 * MARGIN);
 
     // generate the plot data (see struct PlotData)
-    let plot_data = generate_plot_data(parsed_tsv, height, width, height_subplot);
+    let plot_data = generate_plot_data(parsed_tsv, height, *width, *height_subplot);
 
     // filter the data based on the cutoff
     let plot_data_filtered: Vec<PlotData> = plot_data
-        .clone()
         .into_iter()
         .filter(|x| x.max > chromosome_cutoff as usize)
         .collect();
 
     // make the writable svg file
-    let out_filename = format!("{}.svg", output);
+    let out_filename = format!("{}.svg", output.display());
     let mut svg_file = File::create(out_filename)?;
 
     // construct the svg
@@ -64,7 +58,7 @@ pub fn plot(matches: &clap::ArgMatches) -> Result<()> {
                  </svg>",
             width,
             height,
-            add_all_path_elements(plot_data_filtered, height_subplot as isize, width)
+            add_all_path_elements(plot_data_filtered, *height_subplot as isize, *width)
         );
 
     svg_file.write_all(svg.as_bytes())?;
@@ -83,7 +77,7 @@ pub struct TelomericRepeatRecord {
 }
 
 /// This deserializes a TSV to a [`Vec<TelomericRepeatRecord>`].
-fn parse_tsv(path: &str) -> Result<Vec<TelomericRepeatRecord>> {
+fn parse_tsv(path: PathBuf) -> Result<Vec<TelomericRepeatRecord>> {
     let mut tsv_reader = ReaderBuilder::new().delimiter(b'\t').from_path(path)?;
     let mut plot_coords_vec = Vec::new();
 
@@ -229,7 +223,7 @@ fn add_all_path_elements(plot_data: Vec<PlotData>, height_subplot: isize, width:
 
 /// Format [`usize`] to megabase string.
 fn format_number_to_mb(n: usize) -> String {
-    format!("{:.1}Mb", (n as f64 / 1000_000f64))
+    format!("{:.1}Mb", (n as f64 / 1_000_000_f64))
 }
 
 /// The final data structure.

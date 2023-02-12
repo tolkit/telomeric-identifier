@@ -1,53 +1,56 @@
 use crate::{utils, SubCommand};
-use anyhow::{Context, Result};
+use anyhow::Result;
 use bio::io::fasta;
 use std::fs::{create_dir_all, File};
 use std::io::LineWriter;
 use std::io::Write;
+use std::path::PathBuf;
 use std::str;
 
 /// The entry point for `tidk search`.
 pub fn search(matches: &clap::ArgMatches, sc: SubCommand) -> Result<()> {
     let input_fasta = matches
-        .value_of("fasta")
-        .context("Could not get the value of `fasta`.")?;
+        .get_one::<PathBuf>("fasta")
+        .expect("errored by clap");
     let reader = fasta::Reader::from_file(input_fasta)?;
 
-    let telomeric_repeat: String = matches
-        .value_of_t("string")
-        .context("Could not parse `string` as String.")?;
-    let extension: String = matches
-        .value_of_t("extension")
-        .context("Could not parse `extension` as String.")?;
-
+    let telomeric_repeat = matches
+        .get_one::<String>("string")
+        .expect("errored by clap");
+    let extension = matches
+        .get_one::<String>("extension")
+        .expect("defaulted by clap");
     eprintln!(
         "[+]\tSearching genome for telomeric repeat: {}",
         telomeric_repeat
     );
 
-    let window_size: usize = matches
-        .value_of_t("window")
-        .context("Could not parse `window` as usize.")?;
+    let window_size = *matches
+        .get_one::<usize>("window")
+        .expect("defaulted by clap");
     let outdir = matches
-        .value_of("dir")
-        .context("Could not get the value of `dir`.")?;
+        .get_one::<PathBuf>("dir")
+        .expect("defaulted by clap");
     let output = matches
-        .value_of("output")
-        .context("Could not get the value of `output`.")?;
+        .get_one::<String>("output")
+        .expect("errored by clap");
 
     // create directory for output
-    create_dir_all(format!("{}", outdir))?;
+    create_dir_all(outdir)?;
 
     // create file
     let file_name = format!(
         "{}/{}{}{}",
-        outdir, output, "_telomeric_repeat_windows.", extension
+        outdir.display(),
+        output,
+        "_telomeric_repeat_windows.",
+        extension
     );
     let search_file = File::create(&file_name)?;
     let mut search_file = LineWriter::new(search_file);
 
     // add headers if extension/file type is a csv
-    if extension == "tsv" {
+    if extension == &"tsv" {
         writeln!(
             search_file,
             "id\twindow\tforward_repeat_number\treverse_repeat_number\ttelomeric_repeat"
@@ -63,7 +66,7 @@ pub fn search(matches: &clap::ArgMatches, sc: SubCommand) -> Result<()> {
         write_window_counts(
             record,
             &mut search_file,
-            &telomeric_repeat,
+            telomeric_repeat,
             window_size,
             id.clone(),
             &extension,

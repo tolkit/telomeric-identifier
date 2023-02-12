@@ -18,15 +18,14 @@ pub struct Motifs {
 /// Find all the occurrences of a motif in a DNA string.
 pub fn find_motifs(motif: &str, string: &str) -> Motifs {
     let motif_length = motif.len();
-    let matches: Vec<usize>;
 
-    if motif_length < 65 {
+    let matches = if motif_length < 65 {
         let matcher = KMP::new(motif.as_bytes());
-        matches = matcher.find_all(string.as_bytes()).collect::<Vec<usize>>();
+        matcher.find_all(string.as_bytes()).collect::<Vec<usize>>()
     } else {
         let matcher = BOM::new(motif.as_bytes());
-        matches = matcher.find_all(string.as_bytes()).collect::<Vec<usize>>();
-    }
+        matcher.find_all(string.as_bytes()).collect::<Vec<usize>>()
+    };
 
     Motifs {
         indexes: matches.to_owned(),
@@ -89,7 +88,7 @@ pub fn string_rotation(s1: &str, s2: &str) -> bool {
     if s1.len() == s2.len() {
         let mut s2 = s2.to_string();
         s2.push_str(&s2.clone());
-        return s2.contains(&s1);
+        return s2.contains(s1);
     }
     false
 }
@@ -132,39 +131,11 @@ fn minimal_rotation<T: Ord>(s: &[T]) -> usize {
 /// or string rotations of the reverse complement
 /// so find the lexographically minimal version of a string/its reverse complement.
 pub fn lms(telomeric_repeat1: &str, telomeric_repeat2: &str) -> String {
-    // get index of where to rotate
-    // for forward
-    let index_f = minimal_rotation(telomeric_repeat1.as_bytes());
-    let index_r = minimal_rotation(telomeric_repeat2.as_bytes());
-    // for reverse
-    let telomeric_repeat1_r = reverse_complement(telomeric_repeat1);
-    let telomeric_repeat2_r = reverse_complement(telomeric_repeat2);
-    // reverse indexes
-    let index_fr = minimal_rotation(telomeric_repeat1_r.as_bytes());
-    let index_rr = minimal_rotation(telomeric_repeat2_r.as_bytes());
-
-    // put 0 -> index at end
-    let end_f = &telomeric_repeat1[0..index_f];
-    let end_r = &telomeric_repeat2[0..index_r];
-    let end_fr = &telomeric_repeat1_r[0..index_fr];
-    let end_rr = &telomeric_repeat2_r[0..index_rr];
-
-    // put index -> end at start
-    let start_f = &telomeric_repeat1[index_f..];
-    let start_r = &telomeric_repeat2[index_r..];
-    let start_fr = &telomeric_repeat1_r[index_fr..];
-    let start_rr = &telomeric_repeat2_r[index_rr..];
-
-    // give us the string
-    let lms_f = format!("{}{}", start_f, end_f);
-    let lms_r = format!("{}{}", start_r, end_r);
-    let lms_fr = format!("{}{}", start_fr, end_fr);
-    let lms_rr = format!("{}{}", start_rr, end_rr);
-
-    // now we have four strings, and have to report one
-    let mut strings = vec![&lms_f, &lms_r, &lms_fr, &lms_rr];
-    strings.string_sort_unstable(natural_lexical_cmp);
-    strings[0].to_string()
+    let is_rotation = string_rotation(telomeric_repeat1, telomeric_repeat2);
+    let is_reverse_rotation =
+        string_rotation(telomeric_repeat1, &reverse_complement(telomeric_repeat2));
+    assert!(is_rotation || is_reverse_rotation);
+    lex_min(telomeric_repeat1)
 }
 
 /// Given a string (of DNA) return the lexicographical minimal representation
@@ -180,14 +151,88 @@ pub fn lex_min(dna_string: &str) -> String {
     // create the substrings
     // starts
     let start_f = &dna_string[index_f..];
-    let start_r = &dna_string[index_r..];
+    let start_r = &dna_string_r[index_r..];
     // ends
     let end_f = &dna_string[0..index_f];
-    let end_r = &dna_string[0..index_r];
+    let end_r = &dna_string_r[0..index_r];
     // string
     let lms_f = format!("{}{}", start_f, end_f);
     let lms_r = format!("{}{}", start_r, end_r);
     let mut strings = vec![&lms_f, &lms_r];
     strings.string_sort_unstable(natural_lexical_cmp);
     strings[0].to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    
+    use super::*;
+
+    const DNA_STRING: &str = "AAACCCTTG";
+    const REVCOMP_DNA_STRING: &str = "CAAGGGTTT";
+
+    // reverse complement test
+    #[test]
+    fn revcomp1(){ 
+        let revcomp = reverse_complement(DNA_STRING);
+        assert_eq!(revcomp, REVCOMP_DNA_STRING)
+    }
+
+    // string rotation tests
+
+    // define a few strings here,
+    // which are all string rotations
+    // or string rotations of a reverse
+    // complement
+
+    // the canonical string rotation of
+    // TTAGG
+    const CANONICAL: &str = "AACCT";
+
+    // what you see in the literature
+    const T1: &str = "TTAGG";
+    // rotate once right
+    const T2: &str = "TAGGT";
+    // rotate twice
+    const T3: &str = "AGGTT";
+    // rotate twice & reverse complement
+    const T4: &str = "AACCT";
+
+    #[test]
+    fn test_string_rotation1() {
+        let is_rotation = string_rotation(T1, T2);
+        assert!(is_rotation)
+    }
+    #[test]
+    fn string_rotation2() {
+        let is_rotation = string_rotation(T1, T3);
+        assert!(is_rotation)
+    }
+    #[test]
+    fn string_rotation3_fail() {
+        let is_rotation = string_rotation(T1, T4);
+        assert!(!is_rotation)
+    }
+    #[test]
+    fn lex_min1() {
+        let lmin = lex_min(T1);
+        assert_eq!(lmin, CANONICAL)
+    }
+    #[test]
+    fn lex_min2() {
+        let lmin = lex_min(T2);
+        assert_eq!(lmin, CANONICAL)
+    }
+
+    // motifs
+    // 7*AACCT with one deletion
+    const HAYSTACK: &str = "AACCTAACCTAACCTAACCTAACCTAACCTAACTAACCT";
+    const EXPECTED: &[usize] = &[0, 5, 10, 15, 20, 25, 34];
+
+    #[test]
+    fn motifs1() {
+        let motifs = find_motifs(CANONICAL, HAYSTACK);
+        assert_eq!(motifs.indexes, EXPECTED)
+    }
+
 }

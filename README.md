@@ -249,3 +249,10 @@ OPTIONS:
     -s, --string <string>          Supply a DNA string to trim the reads with.
     -V, --version                  Print version information
 ```
+
+## Cited by:
+
+- Kurbessoian, Tania, et al. "In host evolution of Exophiala dermatitidis in cystic fibrosis lung micro-environment." bioRxiv (2022): 2022-09.
+- Yin, Denghua, et al. "Gapless genome assembly of East Asian finless porpoise." Scientific Data 9.1 (2022): 765.
+- Leonard, Guy, et al. "A genome sequence assembly of the phototactic and optogenetic model fungus Blastocladiella emersonii reveals a diversified nucleotide-cyclase repertoire." Genome Biology and Evolution 14.12 (2022): evac157.
+- Edwards, Richard J., et al. "A phased chromosome-level genome and full mitochondrial sequence for the dikaryotic myrtle rust pathogen, Austropuccinia psidii." BioRxiv (2022): 2022-04.

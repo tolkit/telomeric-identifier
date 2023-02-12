@@ -2,7 +2,10 @@ use std::{
     boxed::Box,
     fmt::{self, Display},
 };
-use tabled::{object::Rows, Disable, Footer, MaxWidth, Modify, Table, Tabled};
+use tabled::{
+    object::{Columns, Rows},
+    Disable, Modify, Panel, Table, Tabled, Width,
+};
 
 /// A telomeric repeat sequence, or sequences.
 #[derive(Debug, Clone)]
@@ -40,7 +43,7 @@ pub struct TelomereSeq<'a> {
 // automated input start
 
 /// All the clades for which we have data.
-pub const CLADES: &[&str] = &[
+pub static CLADES: &[&str] = &[
     "Accipitriformes",
     "Actiniaria",
     "Agaricales",
@@ -886,12 +889,11 @@ pub fn print_table() {
         Table::new(&clade_vec)
             .with(
                 Modify::new(Rows::new(1..clade_vec.len() - 1))
-                    .with(MaxWidth::wrapping(30).keep_words()),
+                    .with(Width::wrap(30).keep_words()),
             )
-            .with(Disable::Column(2..3))
-            .with(Footer(
+            .with(Disable::column(Columns::new(2..3)))
+            .with(Panel::footer(
                 "This table is modified from \"A telomeric repeat database\"\nhttps://github.com/tolkit/a-telomeric-repeat-database"
             ))
-            .to_string()
     );
 }

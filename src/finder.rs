@@ -4,6 +4,7 @@ use bio::io::fasta;
 use std::fs::{create_dir_all, File};
 use std::io::LineWriter;
 use std::io::Write;
+use std::path::PathBuf;
 use std::process;
 use std::str;
 
@@ -12,20 +13,19 @@ use std::str;
 /// Finder uses the clade specific telomere sequence and queries against the genome.
 pub fn finder(matches: &clap::ArgMatches, sc: SubCommand) -> Result<()> {
     // print table of telomeric sequences
-    if matches.is_present("print") {
+    if matches.get_flag("print") {
         clades::print_table();
         process::exit(1);
     }
 
-    let input_fasta = matches
-        .value_of("fasta")
-        .context("Could not get the value of `fasta`.")?;
+    let input_fasta: PathBuf = matches
+        .get_one::<PathBuf>("fasta")
+        .expect("errored by clap")
+        .clone();
     let reader = fasta::Reader::from_file(input_fasta)?;
 
-    let clade: String = matches
-        .value_of_t("clade")
-        .context("Could not parse `clade` as String.")?;
-    let clade_info = clades::return_telomere_sequence(&clade);
+    let clade = matches.get_one::<String>("clade").expect("errored by clap");
+    let clade_info = clades::return_telomere_sequence(clade);
 
     if clade_info.length == 1 {
         eprintln!(
@@ -52,21 +52,22 @@ pub fn finder(matches: &clap::ArgMatches, sc: SubCommand) -> Result<()> {
         }
     }
 
-    let window_size = matches
-        .value_of_t("window")
-        .context("Could not parse `window` as usize.")?;
-    let outdir = matches
-        .value_of("dir")
-        .context("Could not get the value of `dir`.")?;
+    let window_size: usize = *matches.get_one::<usize>("window").expect("errored by clap");
+    let outdir = matches.get_one::<PathBuf>("dir").expect("errored by clap");
     let output = matches
-        .value_of("output")
-        .context("Could not get the value of `output`.")?;
+        .get_one::<PathBuf>("output")
+        .expect("errored by clap");
 
     // create directory for output
-    create_dir_all(format!("{}", outdir))?;
+    create_dir_all(outdir)?;
 
     // create file
-    let file_name = format!("{}/{}{}", outdir, output, "_telomeric_repeat_windows.tsv");
+    let file_name = format!(
+        "{}/{}{}",
+        outdir.display(),
+        output.display(),
+        "_telomeric_repeat_windows.tsv"
+    );
     let finder_file = File::create(&file_name)?;
     let mut finder_file = LineWriter::new(finder_file);
     // add headers
