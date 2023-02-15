@@ -49,7 +49,7 @@ impl SubCommand {
                         .get_one::<PathBuf>("fasta")
                         .expect("errored by clap");
                     let clade = matches.get_one::<String>("clade").expect("errored by clap");
-                    let clade_info = clades::return_telomere_sequence(&clade);
+                    let clade_info = clades::return_telomere_sequence(clade);
                     let window_size = *matches.get_one::<usize>("window").expect("errored by clap");
 
                     let file_name = format!(
@@ -88,7 +88,6 @@ Date: {}
                     Ok(eprintln!("[+]\tLog file written to: {}", log_file_name))
                 }
                 SubCommand::Explore => {
-                    let outdir = matches.get_one::<PathBuf>("dir").expect("errored by clap");
                     let input_fasta = matches
                         .get_one::<PathBuf>("fasta")
                         .expect("errored by clap");
@@ -98,30 +97,12 @@ Date: {}
                     let maximum = matches.get_one::<usize>("maximum");
 
                     let threshold = matches.get_one::<i32>("threshold");
-                    let output = matches
-                        .get_one::<PathBuf>("output")
-                        .expect("errored by clap");
-                    let extension = matches
-                        .get_one::<String>("extension")
-                        .expect("errored by clap");
 
-                    let dist_from_chromosome_end = matches.get_one::<usize>("distance");
-
-                    // create file
-                    let explore_file_name = format!(
-                        "{}/{}{}{}",
-                        outdir.display(),
-                        output.display(),
-                        "_telomeric_locations.",
-                        extension
-                    );
-
-                    let putative_telomeric_file =
-                        format!("./explore/{}{}", output.display(), ".txt");
+                    let dist_from_chromosome_end = matches.get_one::<f64>("distance");
 
                     let log_string = format!(
                         r#"tidk version: {}
-Log information for output files: {}, {}
+Log information for output files: printed to STDOUT
 Date: {}
 `tidk explore` was run with the following parameters:
     Input fasta: {}
@@ -129,10 +110,8 @@ Date: {}
     Or from length: {}
     To length: {}
     Threshold: {}
-    Searching at {}bp distance from chromosome end"#,
+    Searching at {}% distance from chromosome end"#,
                         crate_version!(),
-                        explore_file_name,
-                        putative_telomeric_file,
                         Local::now().format(DATE_FORMAT_STR),
                         input_fasta.display(),
                         {
@@ -159,12 +138,11 @@ Date: {}
                         // safely unwrap
                         threshold.unwrap(),
                         // safely unwrap
-                        dist_from_chromosome_end.unwrap(),
+                        *dist_from_chromosome_end.unwrap() * 100.0,
                     );
 
                     // create file
-                    let log_file_name =
-                        format!("{}/{}{}", outdir.display(), output.display(), ".log");
+                    let log_file_name = "tidk-explore.log".to_string();
                     let log_file = std::fs::File::create(&log_file_name)?;
                     let mut log_file = std::io::LineWriter::new(log_file);
 

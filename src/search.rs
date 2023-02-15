@@ -46,11 +46,11 @@ pub fn search(matches: &clap::ArgMatches, sc: SubCommand) -> Result<()> {
         "_telomeric_repeat_windows.",
         extension
     );
-    let search_file = File::create(&file_name)?;
+    let search_file = File::create(file_name)?;
     let mut search_file = LineWriter::new(search_file);
 
     // add headers if extension/file type is a csv
-    if extension == &"tsv" {
+    if extension == "tsv" {
         writeln!(
             search_file,
             "id\twindow\tforward_repeat_number\treverse_repeat_number\ttelomeric_repeat"
@@ -69,7 +69,7 @@ pub fn search(matches: &clap::ArgMatches, sc: SubCommand) -> Result<()> {
             telomeric_repeat,
             window_size,
             id.clone(),
-            &extension,
+            extension,
         )?;
 
         eprintln!("[+]\tChromosome {} processed", id);

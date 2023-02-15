@@ -34,7 +34,6 @@ pub fn finder(matches: &clap::ArgMatches, sc: SubCommand) -> Result<()> {
                 .seq
                 .get(0)
                 .context("Could not get the first element of `seq`.")?
-                .to_owned()
         );
     } else if clade_info.length > 1 {
         eprintln!(
@@ -68,7 +67,7 @@ pub fn finder(matches: &clap::ArgMatches, sc: SubCommand) -> Result<()> {
         output.display(),
         "_telomeric_repeat_windows.tsv"
     );
-    let finder_file = File::create(&file_name)?;
+    let finder_file = File::create(file_name)?;
     let mut finder_file = LineWriter::new(finder_file);
     // add headers
     writeln!(
