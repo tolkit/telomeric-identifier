@@ -5,254 +5,130 @@
 1. `explore` - tries to find the telomeric repeat unit in the genome.
 2. `find` and `search` are essentially the same. They identify a repeat sequence in windows across the genome. `find` uses an in-built table of telomeric repeats, in `search` you supply your own.
 3. `plot` does what is says on the tin, and plots the csv output of `find` or `search` as an SVG.
-4. `min` returns the lexicographically minimal string of an input DNA string(s) or file of DNA sequences.
-5. `trim` trims fasta sequences using a supplied base repeat string.
 
 ## Install
 
 The easiest way to install is through conda:
 
 ```bash
-# note this is currently an older version than in this repo...
 conda install -c bioconda tidk
 ```
 
 Otherwise...
 
-As with other Rust projects, you have to complile yourself. <a href="https://www.rust-lang.org/tools/install">Download rust</a>, clone this repo, `cd` into it, and then run:
+As with other Rust projects, you will have to complile yourself. <a href="https://www.rust-lang.org/tools/install">Download rust</a>, clone this repo, `cd` into it, and then run:
 
 `cargo install --path=.`
 
-Compiling takes anywhere from 1-6 minutes from fresh (tested on the farm). The executable will be installed in your `PATH` as `tidk`.
+To install into `$PATH` as `tidk`.
 
 ## Usage
 
-### Overall
-
-```
-tidk 0.2.2
-Max Brown <mb39@sanger.ac.uk>
-A Telomere Identification Toolkit.
-
-USAGE:
-    tidk [SUBCOMMAND]
-
-OPTIONS:
-    -h, --help       Print help information
-    -V, --version    Print version information
-
-SUBCOMMANDS:
-    explore    Use a range of kmer sizes to find potential telomeric repeats.
-    find       Supply the name of a clade your organsim belongs to, and this submodule will find
-                   all telomeric repeat matches for that clade.
-    help       Print this message or the help of the given subcommand(s)
-    min        Emit the canonical lexicographically minimal DNA string.
-    plot       SVG plot of TSV generated from search or find.
-    search     Search the input genome with a specific telomeric repeat search string.
-    trim       Trim a specific telomeric repeat from the input reads and yield reads oriented at
-                   the telomere start.
-```
+Below is some usage guidance. From 0.2.3 onwards there have been breaking changes to the CLI interface. They will be pointed out below, and in the release changelog.
 
 ### Explore 
 
-`tidk explore` will identify all sequences of length k, which repeat at least twice throughout a genome. Repeats of high number toward the beginning or end of sequences are likely candidates for telomeric repeats. The reported repeats are the lexicographically most minimal of all possible string rotations of the telomeric repeat, in both forward and reverse complement forms.
-
-It outputs either a TSV or bedgraph of potential telomeric repeats and their locations, in addition to a text file of the potential telomeric repeat sequences, and how often they are found in the genome.
+`tidk explore` will attempt to find the simple telomeric repeat unit in the genome provided. It will report this repeat in its canonical form (e.g. TTAGG -> AACCT). Unlike previous versions, a simple TSV is printed to STDOUT. Use the `distance` parameter to search only in a proportion of the chromosome arms.
 
 For example:
-`tidk explore --fasta fastas/iyBomHort1_1.20210303.curated_primary.fa --minimum 5 --maximum 12 -o test_dist -t 500` searches the genome for repeats from length 5 to length 12 sequentially (definite potential to be made concurrent) on the <a href="https://www.ebi.ac.uk/ena/browser/view/PRJEB43539"><i>Bombus hortorum</i> genome</a>.
+`tidk explore --minimum 5 --maximum 12 fastas/iyBomHort1_1.20210303.curated_primary.fa` searches the genome for repeats from length 5 to length 12 sequentially on the <a href="https://www.ebi.ac.uk/ena/browser/view/PRJEB43539"><i>Bombus hortorum</i> genome</a>.
 
 ```
-tidk-explore 0.2.2
 Use a range of kmer sizes to find potential telomeric repeats.
+One of either length, or minimum and maximum must be specified.
 
-USAGE:
-    tidk explore [OPTIONS] --output <output> --dir <dir> <fasta>
+Usage: tidk explore [OPTIONS] <FASTA>
 
-ARGS:
-    <fasta>    The input fasta file.
+Arguments:
+  <FASTA>  The input fasta file
 
-OPTIONS:
-    -d, --dir <dir>                Output directory to write files to.
-        --distance <distance>      The distance in base pairs from the beginning or end of a
-                                   chromosome, to report potential telomeric repeats in. [default:
-                                   150000]
-    -e, --extension <extension>    The extension, defining the output type of the file. [default:
-                                   tsv] [possible values: tsv, bedgraph]
-    -h, --help                     Print help information
-    -l, --length <length>          Length of substring.
-        --log                      Output a log file.
-    -m, --minimum <minimum>        Minimum length of substring. [default: 5]
-    -o, --output <output>          Output filename for the TSVs (without extension).
-    -t, --threshold <threshold>    Positions of repeats are only reported if they occur sequentially
-                                   in a greater number than the threshold. [default: 100]
-    -v, --verbose                  Print verbose output.
-    -V, --version                  Print version information
-    -x, --maximum <maximum>        Maximum length of substring. [default: 12]
+Options:
+  -l, --length [<LENGTH>]        Length of substring
+  -m, --minimum [<MINIMUM>]      Minimum length of substring [default: 5]
+  -x, --maximum [<MAXIMUM>]      Maximum length of substring [default: 12]
+  -t, --threshold [<THRESHOLD>]  Positions of repeats are only reported if they occur sequentially in a greater number than the threshold [default: 100]
+      --distance [<DISTANCE>]    The distance from the end of the chromosome as a proportion of chromosome length. [default: 0.1]
+  -v, --verbose                  Print verbose output.
+      --log                      Output a log file.
+  -h, --help                     Print help
+  -V, --version                  Print version
 ```
 
 ### Find
 
-`tidk find` will take an input clade, and match the known telomeric repeat for that clade (or repeats plural) and search the genome. Uses the <a href="http://telomerase.asu.edu/sequences_telomere.html">telomeric repeat database</a>. As more telomeric repeats are found and added, the dictionary of sequences used will increase (perhaps there is a more elegant way to parse the command line input?). We have a lot more clades of late, but do sanity check the repeats as the database is not yet curated.
+`tidk find` will take an input clade, and match the known telomeric repeat for that clade (or repeats plural) and search the genome. Uses the <a href="http://telomerase.asu.edu/sequences_telomere.html">telomeric repeat database</a>. As more telomeric repeats are found and added, the dictionary of sequences used will increase. We have a lot more clades of late, but do sanity check the repeats as the database is not yet curated. I'm actively working on a curated database.
 
 ```
-tidk-find 0.2.2
-Supply the name of a clade your organsim belongs to, and this submodule will find all telomeric
-repeat matches for that clade.
+Supply the name of a clade your organsim belongs to, and this submodule will find all telomeric repeat matches for that clade.
 
-USAGE:
-    tidk find [OPTIONS] [fasta]
+Usage: tidk find [OPTIONS] [FASTA]
 
-ARGS:
-    <fasta>    The input fasta file.
+Arguments:
+  [FASTA]  The input fasta file
 
-OPTIONS:
-    -c, --clade <clade>      The clade of organism to identify telomeres in. [possible values:
-                             Accipitriformes, Actiniaria, Agaricales, Alismatales, Amphilepidida,
-                             Anura, Apiales, Aplousobranchia, Aquifoliales, Araneae, Artiodactyla,
-                             Asparagales, Asterales, Atheriniformes, Balanomorpha, Boraginales,
-                             Brassicales, Buxales, Camarodonta, Caprimulgiformes, Carcharhiniformes,
-                             Cardiida, Carnivora, Caryophyllales, Celastrales, Chaetocerotales,
-                             Cheilostomatida, Chiroptera, Chitonida, Chlamydomonadales, Coleoptera,
-                             Comatulida, Crassiclitellata, Cucurbitales, Cypriniformes, Decapoda,
-                             Dioctophymatida, Dipsacales, Ericales, Eucoccidiorida, Euglenales,
-                             Eulipotyphla, Fabales, Fagales, Forcipulatida, Fucales, Gentianales,
-                             Geophilomorpha, Geraniales, Gigartinales, Glomerida, Hemiptera,
-                             Heteronemertea, Hirudinida, Hymenoptera, Hypnales, Isochrysidales,
-                             Isopoda, Lamiales, Lepidoptera, Liliales, Lithobiomorpha,
-                             Littorinimorpha, Lunulariales, Lycopodiales, Malpighiales, Malvales,
-                             Megaloptera, Myrtales, Neuroptera, Nudibranchia, Odonata, Opiliones,
-                             Orthoptera, Ostreida, Palmariales, Pectinida, Pelecaniformes,
-                             Perciformes, Phlebobranchia, Phyllodocida, Plecoptera, Poales,
-                             Polytrichales, Primates, Procellariiformes, Pyrenomonadales,
-                             Ranunculales, Raphidioptera, Rhabditida, Rodentia, Rosales, Sabellida,
-                             Salmoniformes, Sapindales, Scombriformes, Scorpiones, Solanales,
-                             Sphagnales, Stolidobranchia, Symphypleona, Trichoptera, Trochida,
-                             Venerida]
-    -d, --dir <dir>          Output directory to write files to.
-    -h, --help               Print help information
-        --log                Output a log file.
-    -o, --output <output>    Output filename for the TSVs (without extension).
-    -p, --print              Print a table of clades, along with their telomeric sequences.
-    -V, --version            Print version information
-    -w, --window <window>    Window size to calculate telomeric repeat counts in. [default: 10000]
+Options:
+  -w, --window [<WINDOW>]  Window size to calculate telomeric repeat counts in [default: 10000]
+  -c, --clade <CLADE>      The clade of organism to identify telomeres in [possible values: Accipitriformes, Actiniaria, Agaricales, Alismatales, Amphilepidida, Anura, Apiales, Aplousobranchia, Aquifoliales, Araneae, Artiodactyla, Asparagales, Asterales, Atheriniformes, Balanomorpha, Boraginales, Brassicales, Buxales, Camarodonta, Caprimulgiformes, Carcharhiniformes, Cardiida, Carnivora, Caryophyllales, Celastrales, Chaetocerotales, Cheilostomatida, Chiroptera, Chitonida, Chlamydomonadales, Coleoptera, Comatulida, Crassiclitellata, Cucurbitales, Cypriniformes, Decapoda, Dioctophymatida, Dipsacales, Ericales, Eucoccidiorida, Euglenales, Eulipotyphla, Fabales, Fagales, Forcipulatida, Fucales, Gentianales, Geophilomorpha, Geraniales, Gigartinales, Glomerida, Hemiptera, Heteronemertea, Hirudinida, Hymenoptera, Hypnales, Isochrysidales, Isopoda, Lamiales, Lepidoptera, Liliales, Lithobiomorpha, Littorinimorpha, Lunulariales, Lycopodiales, Malpighiales, Malvales, Megaloptera, Myrtales, Neuroptera, Nudibranchia, Odonata, Opiliones, Orthoptera, Ostreida, Palmariales, Pectinida, Pelecaniformes, Perciformes, Phlebobranchia, Phyllodocida, Plecoptera, Poales, Polytrichales, Primates, Procellariiformes, Pyrenomonadales, Ranunculales, Raphidioptera, Rhabditida, Rodentia, Rosales, Sabellida, Salmoniformes, Sapindales, Scombriformes, Scorpiones, Solanales, Sphagnales, Stolidobranchia, Symphypleona, Trichoptera, Trochida, Venerida]
+  -o, --output <OUTPUT>    Output filename for the TSVs (without extension)
+  -d, --dir <DIR>          Output directory to write files to
+  -p, --print              Print a table of clades, along with their telomeric sequences
+      --log                Output a log file
+  -h, --help               Print help
+  -V, --version            Print version
 ```
 
 ### Search
 
-`tidk search` will search the genome for an input string. If you know the telomeric repeat of your sequenced organism, this will hopefully find it.
+`tidk search` will search the genome for an input string. If you know the telomeric repeat of your sequenced organism, this will find it.
 
 ```
-tidk-search 0.2.2
 Search the input genome with a specific telomeric repeat search string.
 
-USAGE:
-    tidk search [OPTIONS] --string <string> --output <output> --dir <dir> <fasta>
+Usage: tidk search [OPTIONS] --string <STRING> --output <OUTPUT> --dir <DIR> <FASTA>
 
-ARGS:
-    <fasta>    The input fasta file.
+Arguments:
+  <FASTA>  The input fasta file
 
-OPTIONS:
-    -d, --dir <dir>                Output directory to write files to.
-    -e, --extension <extension>    The extension, defining the output type of the file. [default:
-                                   tsv] [possible values: tsv, bedgraph]
-    -h, --help                     Print help information
-        --log                      Output a log file.
-    -o, --output <output>          Output filename for the TSVs (without extension).
-    -s, --string <string>          Supply a DNA string to query the genome with.
-    -V, --version                  Print version information
-    -w, --window <window>          Window size to calculate telomeric repeat counts in. [default:
-                                   10000]
+Options:
+  -s, --string <STRING>          The DNA string to query the genome with
+  -w, --window [<WINDOW>]        Window size to calculate telomeric repeat counts in [default: 10000]
+  -o, --output <OUTPUT>          Output filename for the TSVs (without extension)
+  -d, --dir <DIR>                Output directory to write files to
+  -e, --extension [<EXTENSION>]  The extension, defining the output type of the file [default: tsv] [possible values: tsv, bedgraph]
+      --log                      Output a log file
+  -h, --help                     Print help
+  -V, --version                  Print version
 ```
 
 ### Plot
 
-`tidk plot` will plot a CSV from the output of `tidk search`. Working on plotting for `tidk find` (i.e. extending to multiple telomeric repeat sequences in same CSV).
+`tidk plot` will plot a CSV from the output of `tidk search`.
 
 ```
-tidk-plot 0.2.2
 SVG plot of TSV generated from search or find.
 
-USAGE:
-    tidk plot [OPTIONS] --tsv <tsv> --output <output>
+Usage: tidk plot [OPTIONS] --tsv <TSV>
 
-OPTIONS:
-    -h, --help               Print help information
-        --height <height>    The height of subplots (px). [default: 200]
-    -o, --output <output>    Output filename for the SVG (without extension). [default: tidk-plot]
-    -t, --tsv <tsv>          The input TSV file.
-    -V, --version            Print version information
-    -w, --width <width>      The width of plot (px). [default: 1000]
+Options:
+  -t, --tsv <TSV>          The input TSV file
+      --height [<HEIGHT>]  The height of subplots (px). [default: 200]
+  -w, --width [<WIDTH>]    The width of plot (px) [default: 1000]
+  -o, --output [<OUTPUT>]  Output filename for the SVG (without extension) [default: tidk-plot]
+  -h, --help               Print help
+  -V, --version            Print version
 ```
 
 As an example on the ol' Square Spot Rustic <i>Xestia xanthographa</i>:
 
 ```bash
-tidk find -f fastas/ilXesXant1_1.20201023.curated_primary.fa -c lepidoptera -o Xes
+tidk find -c lepidoptera -o Xes fastas/ilXesXant1_1.20201023.curated_primary.fa
 
-tidk plot -c finder/Xes_telomeric_repeat_windows.csv -o ilXes -h 120 -w 800
-```
-<img src="./ilXes.svg">
-
-### Min
-
-`tidk min` returns the lexicographically minimal DNA string given an input. Useful for universally comparing repeats using this tool. Surprisingly, it works on even chromosomal length DNA strings quickly, not that you would want to do that...
-
-Examples:
-
-- `tidk min AATGCG` or process multiple `tidk min AATGCG AAGGTTC GGTTAAT`
-- `tidk min -f input.fa` proccesses input fasta, and outputs fasta. Otherwise `tidk min -f input.txt` reads lines and outputs.
-- `echo "AATTGC" | tidk min`, pipes work.
-- `cat input.fasta | tidk min -x` outputs a fasta. Otherwise `cat input.txt | tidk min` reads lines and outputs. 
-
-Note `cat` here is redundant and creates extra work, but it just shows the piping in action.
-
-```
-tidk-min 0.2.2
-Emit the canonical lexicographically minimal DNA string.
-
-USAGE:
-    tidk min [OPTIONS] [DNA string]...
-
-ARGS:
-    <DNA string>...    Input DNA string. Multiple inputs allowed.
-
-OPTIONS:
-    -f, --file <file>    The input file.
-    -h, --help           Print help information
-    -V, --version        Print version information
-    -x, --fasta          STDIN is in fasta format.
-```
-
-### Trim
-
-`tidk trim` - a rust port of https://github.com/pgonzale60/telomeric-trim. Thanks Pablo!
-
-```
-tidk-trim 0.2.2
-Trim a specific telomeric repeat from the input reads and yield reads oriented at the telomere
-start.
-
-USAGE:
-    tidk trim [OPTIONS] --string <string> --output <output> <fasta>
-
-ARGS:
-    <fasta>    The input fasta file.
-
-OPTIONS:
-    -h, --help                     Print help information
-    -l, --min_len <min_len>        Minimum length of trimmed reads. [default: 1000]
-    -m, --min_occur <min_occur>    Number of contiguous occurrences of telomeric repeat to start
-                                   trimming. [default: 3]
-    -o, --output <output>          Output filename for the trimmed fasta output. [default:
-                                   tidk-trim]
-    -s, --string <string>          Supply a DNA string to trim the reads with.
-    -V, --version                  Print version information
+tidk plot -t finder/Xes_telomeric_repeat_windows.tsv -o ilXes -h 120 -w 800
 ```
 
 ## Cited by:
 
-- Kurbessoian, Tania, et al. "In host evolution of Exophiala dermatitidis in cystic fibrosis lung micro-environment." bioRxiv (2022): 2022-09.
-- Yin, Denghua, et al. "Gapless genome assembly of East Asian finless porpoise." Scientific Data 9.1 (2022): 765.
-- Leonard, Guy, et al. "A genome sequence assembly of the phototactic and optogenetic model fungus Blastocladiella emersonii reveals a diversified nucleotide-cyclase repertoire." Genome Biology and Evolution 14.12 (2022): evac157.
-- Edwards, Richard J., et al. "A phased chromosome-level genome and full mitochondrial sequence for the dikaryotic myrtle rust pathogen, Austropuccinia psidii." BioRxiv (2022): 2022-04.
+- Kurbessoian, Tania, et al. "In host evolution of Exophiala dermatitidis in cystic fibrosis lung micro-environment." **BioRxiv** (2022): 2022-09.
+- Yin, Denghua, et al. "Gapless genome assembly of East Asian finless porpoise." **Scientific Data** 9.1 (2022): 765.
+- Leonard, Guy, et al. "A genome sequence assembly of the phototactic and optogenetic model fungus Blastocladiella emersonii reveals a diversified nucleotide-cyclase repertoire." **Genome Biology and Evolution** 14.12 (2022): evac157.
+- Edwards, Richard J., et al. "A phased chromosome-level genome and full mitochondrial sequence for the dikaryotic myrtle rust pathogen, Austropuccinia psidii." **BioRxiv** (2022): 2022-04.

@@ -10,15 +10,11 @@ pub mod clades;
 pub mod explore;
 /// The entry point for the `tidk find` subcommand.
 pub mod finder;
-/// The entry point for the `tidk min` subcommand.
-pub mod min;
 /// Functions to plot output from `tidk search` and
 /// `tidk find`.
 pub mod plot;
 /// The entry point for the `tidk search` subcommand.
 pub mod search;
-/// The entry point for `tidk trim` subcommand.
-pub mod trim;
 /// Module for utilities.
 pub mod utils;
 
@@ -69,7 +65,7 @@ Date: {}
     Clade chosen: {}
     Telomeric repeats queried: {}"#,
                         crate_version!(),
-                        format!("{}", file_name),
+                        file_name,
                         Local::now().format(DATE_FORMAT_STR),
                         input_fasta.display(),
                         window_size,

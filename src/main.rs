@@ -1,7 +1,7 @@
 use anyhow::Result;
 use clap::{arg, builder::ArgPredicate, crate_version, value_parser, Arg, Command};
 use std::path::PathBuf;
-use tidk::{clades::CLADES, explore, finder, min, plot, search, trim, SubCommand};
+use tidk::{clades::CLADES, explore, finder, plot, search, SubCommand};
 
 fn main() -> Result<()> {
     // command line options
@@ -138,35 +138,6 @@ fn main() -> Result<()> {
                 )
         )
         .subcommand(
-            Command::new("trim")
-                .about("Trim a specific telomeric repeat from the input reads and yield reads oriented at the telomere start.")
-                .arg(
-                    Arg::new("fasta")
-                        .value_name("FASTA")
-                        .value_parser(value_parser!(PathBuf))
-                        .required(true)
-                        .help("The input fasta file")
-                )
-                .arg(
-                    arg!(-s --string <STRING> "The DNA string to query the genome with")
-                        .required(true)
-                )
-                .arg(
-                    arg!(-l --min_len [MIN_LEN] "Minimum length of trimmed reads")
-                        .value_parser(value_parser!(usize))
-                        .default_value("1000")
-                )
-                .arg(
-                    arg!(-o --output [OUTPUT] "Output filename for the trimmed fasta output")
-                        .default_value("tidk-trim")
-                )
-                .arg(
-                    arg!(-m --min_occur [MIN_OCCUR] "Number of contiguous occurrences of telomeric repeat to start trimming")
-                        .value_parser(value_parser!(usize))
-                        .default_value("3")
-                )
-        )
-        .subcommand(
             Command::new("plot")
                 .about("SVG plot of TSV generated from search or find.")
                 // output file name
@@ -191,26 +162,6 @@ fn main() -> Result<()> {
                         .default_value("tidk-plot")
                 )
         )
-        .subcommand(
-            Command::new("min")
-                .about("Emit the canonical lexicographically minimal DNA string.")
-                // output file name
-                .arg(
-                    Arg::new("dna_string")
-                        .num_args(0..)
-                        .help("The DNA string(s) as command line values")
-                )
-                // TODO: check this arg
-                // is this right??
-                .arg(
-                    arg!(-x --fasta "STDIN is in fasta format")
-                        .action(clap::ArgAction::SetTrue)
-                )
-                .arg(
-                    arg!(-f --file [FILE] "The input file")
-                        .value_parser(value_parser!(PathBuf))
-                )
-        )
         .get_matches();
 
     // feed command line options to each main function
@@ -224,14 +175,8 @@ fn main() -> Result<()> {
         Some(("search", matches)) => {
             search::search(matches, SubCommand::Search)?;
         }
-        Some(("trim", matches)) => {
-            trim::trim(matches)?;
-        }
         Some(("plot", matches)) => {
             plot::plot(matches)?;
-        }
-        Some(("min", matches)) => {
-            min::min_dna_string(matches)?;
         }
         _ => {
             unreachable!()
