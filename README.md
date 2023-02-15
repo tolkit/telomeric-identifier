@@ -1,3 +1,8 @@
+[<img alt="github" src="https://img.shields.io/badge/github-tolkit/tidk-8da0cb?style=for-the-badge&labelColor=555555&logo=github" height="20">](https://github.com/tolkit/telomeric-identifier)
+[<img alt="crates.io" src="https://img.shields.io/crates/v/tidk.svg?style=for-the-badge&color=fc8d62&logo=rust" height="20">](https://crates.io/crates/tidk)
+[<img alt="crates.io" src="https://img.shields.io/bioconda/v/tidk.svg?style=for-the-badge&color=fc8d62&logo=rust" height="20">](https://crates.io/crates/tidk)
+[<img alt="bioconda" src="https://img.shields.io/badge/bioconda-tidk-44A833?style=for-the-badge&labelColor=555555&logo=Anaconda" height="20">](https://bioconda.github.io/recipes/tidk/README.html)
+
 # A Telomere Identification toolKit (`tidk`)
 
 `tidk` is a toolkit to identify and visualise telomeric repeats for the Darwin Tree of Life genomes. `tidk` works especially well on chromosomal genomes, but can also work on PacBio HiFi reads well (see <a href="https://github.com/tolkit/a-telomeric-repeat-database">the telomeric repeat database</a> for many examples). There are a few modules in the tool, which may be useful to anyone investigating telomeric repeat sequences in a genome.
