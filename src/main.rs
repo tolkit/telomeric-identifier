@@ -85,24 +85,9 @@ fn main() -> Result<()> {
                         .default_value("100")
                 )
                 .arg(
-                    arg!(--distance [DISTANCE] "The distance in base pairs from the beginning or end of a chromosome, to report potential telomeric repeats in")
-                        .value_parser(value_parser!(usize))
-                        .default_value("150000")
-                )
-                .arg(
-                    arg!(-o --output <OUTPUT> "Output filename for the TSVs (without extension).")
-                        .required(true)
-                        .value_parser(value_parser!(PathBuf))
-                )
-                .arg(
-                    arg!(-d --dir <DIR> "Output directory to write files to.")
-                        .required(true)
-                        .value_parser(value_parser!(PathBuf))
-                )
-                .arg(
-                    arg!(-e --extension [EXTENSION] "The extension, defining the output type of the file")
-                        .default_value("tsv")
-                        .value_parser(["tsv", "bedgraph"])
+                    arg!(--distance [DISTANCE] "The distance from the end of the chromosome as a proportion of chromosome length.")
+                        .value_parser(value_parser!(f64))
+                        .default_value("0.1")
                 )
                 .arg(
                     arg!(-v --verbose "Print verbose output.")
