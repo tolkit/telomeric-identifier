@@ -40,7 +40,7 @@ pub fn explore(matches: &clap::ArgMatches, sc: SubCommand) -> Result<()> {
     let mut output_vec: Vec<RepeatPositions> = Vec::new();
     // i.e. if you chose a length, as opposed to a minmum/maximum
     if length > 0 {
-        println!(
+        eprintln!(
             "[+]\tExploring genome for potential telomeric repeats of length: {}",
             length
         );
@@ -57,7 +57,8 @@ pub fn explore(matches: &clap::ArgMatches, sc: SubCommand) -> Result<()> {
                 let id = record.id().to_owned();
                 let seq_len = record.seq().len();
 
-                let indexes = chunk_fasta(record, length, dist_from_chromosome_end, seq_len);
+                let indexes =
+                    chunk_fasta(record, length, dist_from_chromosome_end, seq_len, verbose);
 
                 if let Some(r) = calculate_indexes(indexes, length, verbose, id, threshold as usize)
                 {
@@ -72,12 +73,12 @@ pub fn explore(matches: &clap::ArgMatches, sc: SubCommand) -> Result<()> {
         output_vec.append(&mut output);
     } else {
         // if a range was chosen.
-        println!(
+        eprintln!(
             "[+]\tExploring genome for potential telomeric repeats between lengths {} and {}.",
             minimum, maximum
         );
         for length in minimum..maximum + 1 {
-            println!("[+]\t\tFinding telomeric repeat length: {}", length);
+            eprintln!("[+]\t\tFinding telomeric repeat length: {}", length);
 
             // have to call reader in the loop, as otherwise `reader` doesn't live long enough.
             // I expect it's not an expensive call anyway.
@@ -93,7 +94,8 @@ pub fn explore(matches: &clap::ArgMatches, sc: SubCommand) -> Result<()> {
                     let id = record.id().to_owned();
                     let seq_len = record.seq().len();
 
-                    let indexes = chunk_fasta(record, length, dist_from_chromosome_end, seq_len);
+                    let indexes =
+                        chunk_fasta(record, length, dist_from_chromosome_end, seq_len, verbose);
 
                     if let Some(r) =
                         calculate_indexes(indexes, length, verbose, id, threshold as usize)
@@ -106,8 +108,8 @@ pub fn explore(matches: &clap::ArgMatches, sc: SubCommand) -> Result<()> {
             output_vec.append(&mut output);
         }
     }
-    println!("[+]\tFinished searching genome");
-    println!("[+]\tGenerating output");
+    eprintln!("[+]\tFinished searching genome");
+    eprintln!("[+]\tGenerating output");
 
     let mut repeat_postitions = RepeatPositions::new();
     for mut el in output_vec {
@@ -150,8 +152,11 @@ fn chunk_fasta(
     chunk_length: usize,
     dist_from_chromosome_end: f64,
     seq_len: usize,
+    verbose: bool,
 ) -> Vec<ChunkedFasta> {
-    let dist = (seq_len as f64 * dist_from_chromosome_end).round() as usize;
+    // seems a bit slower now for pacbio data?
+    // probably need more error handling in this function
+    let dist = (seq_len as f64 * dist_from_chromosome_end).floor() as usize;
 
     let filtered_sequence1 = &sequence.seq()[0..dist];
     let filtered_sequence2 = &sequence.seq()[(seq_len - dist)..];
@@ -161,6 +166,20 @@ fn chunk_fasta(
     let filtered_sequence_len = filtered_sequence.len();
 
     let chunks = filtered_sequence.chunks(chunk_length);
+    // catch edge cases where chunk length greater than sequence length.
+    if filtered_sequence_len <= chunk_length {
+        if verbose {
+            eprintln!(
+                "[-]\tChunk length ({}) greater than filtered sequence length ({}) for {}
+[-]\tConsider increasing proportion of chromosome length covered. Skipping.",
+                chunk_length,
+                filtered_sequence_len,
+                sequence.id()
+            );
+        }
+        return vec![];
+    }
+
     let chunks_plus_one =
         filtered_sequence[chunk_length..filtered_sequence_len].chunks(chunk_length);
 
@@ -406,7 +425,13 @@ mod tests {
 
     fn generate_chunks() -> Vec<ChunkedFasta> {
         let record = bio::io::fasta::Record::with_attrs("id1", None, GENOME.as_bytes());
-        chunk_fasta(record, CHUNK_LENGTH, DIST_FROM_CHROM_END, GENOME.len())
+        chunk_fasta(
+            record,
+            CHUNK_LENGTH,
+            DIST_FROM_CHROM_END,
+            GENOME.len(),
+            false,
+        )
     }
 
     fn generate_indexes() -> RepeatPositions {

@@ -87,7 +87,7 @@ fn main() -> Result<()> {
                 .arg(
                     arg!(--distance [DISTANCE] "The distance from the end of the chromosome as a proportion of chromosome length.")
                         .value_parser(value_parser!(f64))
-                        .default_value("0.1")
+                        .default_value("0.01")
                 )
                 .arg(
                     arg!(-v --verbose "Print verbose output.")
