@@ -139,7 +139,7 @@ fn main() -> Result<()> {
         )
         .subcommand(
             Command::new("plot")
-                .about("SVG plot of TSV generated from search or find.")
+                .about("SVG plot of TSV generated from tidk search.")
                 // output file name
                 .arg(
                     arg!(-t --tsv <TSV> "The input TSV file")

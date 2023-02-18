@@ -32,7 +32,7 @@ Below is some usage guidance. From 0.2.3 onwards there have been breaking change
 
 ### Explore 
 
-`tidk explore` will attempt to find the simple telomeric repeat unit in the genome provided. It will report this repeat in its canonical form (e.g. TTAGG -> AACCT). Unlike previous versions, a simple TSV is printed to STDOUT. Use the `distance` parameter to search only in a proportion of the chromosome arms.
+`tidk explore` will attempt to find the simple telomeric repeat unit in the genome provided. It will report this repeat in its canonical form (e.g. TTAGG -> AACCT). Unlike previous versions, only a simple TSV is printed to STDOUT. Use the `distance` parameter to search only in a proportion of the chromosome arms. The default is 1% of the length of the chromosome either side, but feel free to change this. In particular with raw reads (PacBio), I'd recommend setting the distance flag to 1 (`--distance 1` or `--distance=1`), to process the full length of each read.
 
 For example:
 `tidk explore --minimum 5 --maximum 12 fastas/iyBomHort1_1.20210303.curated_primary.fa` searches the genome for repeats from length 5 to length 12 sequentially on the <a href="https://www.ebi.ac.uk/ena/browser/view/PRJEB43539"><i>Bombus hortorum</i> genome</a>.
@@ -83,7 +83,7 @@ Options:
 
 ### Search
 
-`tidk search` will search the genome for an input string. If you know the telomeric repeat of your sequenced organism, this will find it.
+`tidk search` will search the genome for an input string. If you know the telomeric repeat of your sequenced organism, this will find it and return counts of occurence in windows across the genome.
 
 ```
 Search the input genome with a specific telomeric repeat search string.
@@ -106,10 +106,10 @@ Options:
 
 ### Plot
 
-`tidk plot` will plot a CSV from the output of `tidk search`.
+`tidk plot` will plot the output of `tidk search`.
 
 ```
-SVG plot of TSV generated from search or find.
+SVG plot of TSV generated from search.
 
 Usage: tidk plot [OPTIONS] --tsv <TSV>
 
@@ -136,3 +136,7 @@ tidk plot -t finder/Xes_telomeric_repeat_windows.tsv -o ilXes -h 120 -w 800
 - Yin, Denghua, et al. "Gapless genome assembly of East Asian finless porpoise." **Scientific Data** 9.1 (2022): 765.
 - Leonard, Guy, et al. "A genome sequence assembly of the phototactic and optogenetic model fungus Blastocladiella emersonii reveals a diversified nucleotide-cyclase repertoire." **Genome Biology and Evolution** 14.12 (2022): evac157.
 - Edwards, Richard J., et al. "A phased chromosome-level genome and full mitochondrial sequence for the dikaryotic myrtle rust pathogen, Austropuccinia psidii." **BioRxiv** (2022): 2022-04.
+
+## Omissions
+
+Both `tidk trim` and `tidk min` have been removed from the latest version.
