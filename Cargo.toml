@@ -1,6 +1,6 @@
 [package]
 name = "tidk"
-version = "0.2.3"
+version = "0.2.31"
 authors = ["Max Brown <mb39@sanger.ac.uk>"]
 edition = "2021"
 license = "MIT"
