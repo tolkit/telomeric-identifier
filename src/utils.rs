@@ -80,7 +80,7 @@ pub fn remove_overlapping_indexes(indexes: Motifs, pattern_length: usize) -> Vec
 }
 
 /// A string rotation algorithm.
-/// see [here](https://github.com/rrbonham96/rust-ctci/blob/a2540532b098a06c29f2a5f06f54fc5717fd7669/src/arrays_and_strings/is_rotation.rs)
+/// see [here](https://github.com/rrbonham96/rust-ctci/blob/a2540532b098a06c29f2a5f06f54fc5717fd7669/src/arrays_and_strings/is_rotation.rs).
 /// When there is an error/snp in the telomeric sequence, it causes a shift in the
 /// repeat that is returned in 'explore' subcommand. This info can be leveraged to
 /// count consecutive sequences...
@@ -134,7 +134,9 @@ pub fn lms(telomeric_repeat1: &str, telomeric_repeat2: &str) -> String {
     let is_rotation = string_rotation(telomeric_repeat1, telomeric_repeat2);
     let is_reverse_rotation =
         string_rotation(telomeric_repeat1, &reverse_complement(telomeric_repeat2));
-    assert!(is_rotation || is_reverse_rotation);
+    let is_second_reverse_rotation =
+        string_rotation(&reverse_complement(telomeric_repeat1), telomeric_repeat2);
+    assert!(is_rotation || is_reverse_rotation || is_second_reverse_rotation);
     lex_min(telomeric_repeat1)
 }
 
@@ -165,7 +167,7 @@ pub fn lex_min(dna_string: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    
+
     use super::*;
 
     const DNA_STRING: &str = "AAACCCTTG";
@@ -173,7 +175,7 @@ mod tests {
 
     // reverse complement test
     #[test]
-    fn revcomp1(){ 
+    fn revcomp1() {
         let revcomp = reverse_complement(DNA_STRING);
         assert_eq!(revcomp, REVCOMP_DNA_STRING)
     }
@@ -234,5 +236,4 @@ mod tests {
         let motifs = find_motifs(CANONICAL, HAYSTACK);
         assert_eq!(motifs.indexes, EXPECTED)
     }
-
 }

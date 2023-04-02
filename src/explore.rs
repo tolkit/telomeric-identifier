@@ -209,6 +209,7 @@ fn chunk_fasta(
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct RepeatPosition {
+    id: String,
     pub start: usize,
     pub end: usize,
     pub sequence: String,
@@ -252,6 +253,8 @@ impl RepeatPositions {
     }
 }
 
+// logic messed up here - the start/end don't exclusively include telomeric repeats.
+// it's merging two consective runs, even if they are separated by non (canonical)-telomeric sequence.
 fn calculate_indexes(
     indexes: Vec<ChunkedFasta>,
     chunk_length: usize,
@@ -280,14 +283,17 @@ fn calculate_indexes(
             // this is techinically incorrect - as this will almost always
             // overshoot the last index of the genome.
             collection.push(RepeatPosition {
+                id: id.clone(),
                 start,
                 end: *position2 + chunk_length,
                 sequence: sequence1.to_string(),
             });
         } else if sequence1 == sequence2 {
+            eprintln!("The telomeric repeat for {} is: {}", id.clone(), sequence1);
             continue;
         } else if sequence1 != sequence2 {
             collection.push(RepeatPosition {
+                id: id.clone(),
                 start,
                 end: *position1 + chunk_length,
                 sequence: sequence1.to_string(),
@@ -325,6 +331,7 @@ fn get_telomeric_repeat_estimates(
     telomeric_repeats: &mut RepeatPositions,
 ) -> Result<Vec<(String, i32)>> {
     // can't get all the combinations if we only have 1 element.
+    eprintln!("{:?}", telomeric_repeats);
     if telomeric_repeats.len() == 1 {
         let count = telomeric_repeats.0[0].get_count();
         let seq = &telomeric_repeats.0[0].sequence;
