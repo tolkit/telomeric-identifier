@@ -85,7 +85,7 @@ fn main() -> Result<()> {
                         .default_value("100")
                 )
                 .arg(
-                    arg!(--distance [DISTANCE] "The distance from the end of the chromosome as a proportion of chromosome length.")
+                    arg!(--distance [DISTANCE] "The distance from the end of the chromosome as a proportion of chromosome length. Must range from 0-0.5.")
                         .value_parser(value_parser!(f64))
                         .default_value("0.01")
                 )
