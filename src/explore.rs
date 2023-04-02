@@ -1,4 +1,5 @@
 use crate::{utils, SubCommand};
+use anyhow::bail;
 use anyhow::Result;
 use bio::io::fasta;
 use itertools::Itertools;
@@ -8,6 +9,10 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::str;
 use std::sync::mpsc::channel;
+
+// when distance == 1, we get lower estimate of telomeric repeat number
+// than if we use distance == 0.1
+// it's somehow not splitting RepeatPositions correctly.
 
 static REPEAT_PERIOD_THRESHOLD: usize = 3;
 
@@ -34,6 +39,10 @@ pub fn explore(matches: &clap::ArgMatches, sc: SubCommand) -> Result<()> {
 
     let dist_from_chromosome_end = *matches.get_one::<f64>("distance").expect("errored by clap");
 
+    if dist_from_chromosome_end > 0.5 {
+        bail!("Distance from chromosome end as a proportion can't be more than 0.5.")
+    }
+
     let verbose = matches.get_flag("verbose");
 
     // to report the telomeres...
@@ -57,12 +66,16 @@ pub fn explore(matches: &clap::ArgMatches, sc: SubCommand) -> Result<()> {
                 let id = record.id().to_owned();
                 let seq_len = record.seq().len();
 
-                let indexes =
-                    chunk_fasta(record, length, dist_from_chromosome_end, seq_len, verbose);
+                let sequences = split_seq_by_distance(record, dist_from_chromosome_end, seq_len);
 
-                if let Some(r) = calculate_indexes(indexes, length, verbose, id, threshold as usize)
-                {
-                    s.send(r).expect("Did not send!");
+                for sequence in sequences {
+                    let indexes = chunk_fasta(sequence, length, verbose, id.clone());
+
+                    if let Some(r) =
+                        calculate_indexes(indexes, length, verbose, id.clone(), threshold as usize)
+                    {
+                        s.send(r).expect("Did not send!");
+                    }
                 }
             });
 
@@ -94,13 +107,21 @@ pub fn explore(matches: &clap::ArgMatches, sc: SubCommand) -> Result<()> {
                     let id = record.id().to_owned();
                     let seq_len = record.seq().len();
 
-                    let indexes =
-                        chunk_fasta(record, length, dist_from_chromosome_end, seq_len, verbose);
+                    let sequences =
+                        split_seq_by_distance(record, dist_from_chromosome_end, seq_len);
 
-                    if let Some(r) =
-                        calculate_indexes(indexes, length, verbose, id, threshold as usize)
-                    {
-                        s.send(r).expect("Did not send!");
+                    for sequence in sequences {
+                        let indexes = chunk_fasta(sequence, length, verbose, id.clone());
+
+                        if let Some(r) = calculate_indexes(
+                            indexes,
+                            length,
+                            verbose,
+                            id.clone(),
+                            threshold as usize,
+                        ) {
+                            s.send(r).expect("Did not send!");
+                        }
                     }
                 });
             let mut output = receiver.iter().collect();
@@ -131,6 +152,17 @@ pub fn explore(matches: &clap::ArgMatches, sc: SubCommand) -> Result<()> {
     Ok(())
 }
 
+pub fn split_seq_by_distance(
+    sequence: bio::io::fasta::Record,
+    dist_from_chromosome_end: f64,
+    seq_len: usize,
+) -> [Vec<u8>; 2] {
+    let dist = (seq_len as f64 * dist_from_chromosome_end).ceil() as usize;
+    let filtered_sequence1 = sequence.seq()[0..dist].to_vec();
+    let filtered_sequence2 = sequence.seq()[(seq_len - dist)..].to_vec();
+    [filtered_sequence1, filtered_sequence2]
+}
+
 /// A chunked fasta segment with a position and a sequence.
 /// We split the fasta into chunks of size k, where k is the
 /// potential telomeric repeat length. Consecutive iterations
@@ -148,61 +180,64 @@ pub struct ChunkedFasta {
 /// and compare adjacent chunks for equality. Store the positions and sequences
 /// if they are equivalent.
 fn chunk_fasta(
-    sequence: bio::io::fasta::Record,
+    sequence: Vec<u8>,
     chunk_length: usize,
-    dist_from_chromosome_end: f64,
-    seq_len: usize,
     verbose: bool,
+    id: String,
 ) -> Vec<ChunkedFasta> {
-    // seems a bit slower now for pacbio data?
-    // probably need more error handling in this function
-    let dist = (seq_len as f64 * dist_from_chromosome_end).floor() as usize;
-
-    let filtered_sequence1 = &sequence.seq()[0..dist];
-    let filtered_sequence2 = &sequence.seq()[(seq_len - dist)..];
-
-    let filtered_sequence = [filtered_sequence1, filtered_sequence2].concat();
-
-    let filtered_sequence_len = filtered_sequence.len();
-
-    let chunks = filtered_sequence.chunks(chunk_length);
+    let sequence_len = sequence.len();
+    let chunks = sequence.chunks(chunk_length);
     // catch edge cases where chunk length greater than sequence length.
-    if filtered_sequence_len <= chunk_length {
+    if sequence_len <= chunk_length {
         if verbose {
             eprintln!(
                 "[-]\tChunk length ({}) greater than filtered sequence length ({}) for {}
 [-]\tConsider increasing proportion of chromosome length covered. Skipping.",
-                chunk_length,
-                filtered_sequence_len,
-                sequence.id()
+                chunk_length, sequence_len, id
             );
         }
         return vec![];
     }
 
-    let chunks_plus_one =
-        filtered_sequence[chunk_length..filtered_sequence_len].chunks(chunk_length);
+    let chunks_plus_one = sequence.chunks(chunk_length).skip(1);
 
     // store the index positions and adjacent equivalent sequences.
     let mut indexes = Vec::new();
     // need this otherwise we lose the position in the sequence.
-    // need to check this is actually correct.
     let mut pos = 0;
+    let mut is_first_consecutive = true;
 
     // this is the heavy lifting.
     // can use the enumerate to check whether the position is < dist from start or > dist from end.
+    // FIXME: how do I check if this is the first in a run?
     for (a, b) in chunks.zip(chunks_plus_one) {
         // if chunk contains N, skip.
         if a.contains(&78) || b.contains(&78) {
             pos += chunk_length;
             continue;
         } else if a == b {
-            indexes.push(ChunkedFasta {
-                position: pos,
-                sequence: str::from_utf8(a).unwrap().to_uppercase(),
-            });
+            if is_first_consecutive {
+                indexes.push(ChunkedFasta {
+                    position: pos,
+                    sequence: str::from_utf8(a).unwrap().to_uppercase(),
+                });
+                pos += chunk_length;
+                indexes.push(ChunkedFasta {
+                    position: pos,
+                    sequence: str::from_utf8(a).unwrap().to_uppercase(),
+                });
+                is_first_consecutive = false;
+            } else {
+                pos += chunk_length;
+                indexes.push(ChunkedFasta {
+                    position: pos,
+                    sequence: str::from_utf8(a).unwrap().to_uppercase(),
+                });
+            }
+        } else if a != b {
+            pos += chunk_length;
+            is_first_consecutive = true;
         }
-        pos += chunk_length;
     }
     indexes
 }
@@ -233,10 +268,6 @@ impl RepeatPositions {
         Self(Vec::new())
     }
 
-    fn len(&self) -> usize {
-        self.0.len()
-    }
-
     fn add(&mut self, elem: &mut Vec<RepeatPosition>) {
         self.0.append(elem);
     }
@@ -251,6 +282,16 @@ impl RepeatPositions {
 
         Self(inner.to_vec())
     }
+    // group into HashMap<usize, Vec<RepeatPosition>>
+    // where usize is the length of the telomeric repeat
+    fn make_length_groups(&self) -> HashMap<usize, Vec<RepeatPosition>> {
+        let mut groups = HashMap::new();
+        for el in &self.0 {
+            let length = el.sequence.len();
+            groups.entry(length).or_insert(Vec::new()).push(el.clone());
+        }
+        groups
+    }
 }
 
 // logic messed up here - the start/end don't exclusively include telomeric repeats.
@@ -262,7 +303,9 @@ fn calculate_indexes(
     id: String,
     frequency: usize,
 ) -> Option<RepeatPositions> {
+    // eprintln!("INDEXES: {:#?}", indexes);
     let mut start = 0usize;
+    // let mut end = 0usize;
 
     let mut collection: Vec<RepeatPosition> = Vec::new();
 
@@ -288,16 +331,23 @@ fn calculate_indexes(
                 end: *position2 + chunk_length,
                 sequence: sequence1.to_string(),
             });
-        } else if sequence1 == sequence2 {
-            eprintln!("The telomeric repeat for {} is: {}", id.clone(), sequence1);
+            // end = *position2 + chunk_length;
+            // eprintln!("FINAL:: START: {}\tEND: {}", start, end);
+            // FIXME: ITS HERE? ALSO NEED TO CHECK IF START/END IS DIFFERENT?
+        } else if sequence1 == sequence2 && (position2 - position1) == sequence1.len() {
+            // start = *position1;
+            // end = *position2;
+            // eprintln!("EQUAL:: START: {}\tEND: {}", start, end);
             continue;
-        } else if sequence1 != sequence2 {
+        } else if !(sequence1 == sequence2 && (position2 - position1) == sequence1.len()) {
+            // eprintln!("UNEQUAL:: START: {}\tEND: {}", start, end);
             collection.push(RepeatPosition {
                 id: id.clone(),
                 start,
                 end: *position1 + chunk_length,
                 sequence: sequence1.to_string(),
             });
+            // end = *position1 + chunk_length;
             start = *position2;
         }
     }
@@ -315,65 +365,82 @@ fn calculate_indexes(
     }
 }
 
-/// a quick method to check if
-/// a sequence looks like it is not
+/// check if a sequence looks like it is not
 /// a telomeric repeat
 fn check_telomeric_repeat(sequence: &str) -> bool {
     let repeat_period = check_repeats(sequence);
     repeat_period < REPEAT_PERIOD_THRESHOLD
 }
 
+/// take two repeat sequences of the same length and
+/// return bool, if they represent the same canonical repeat
+/// and the canonical repeat
+fn test_repeats(repeat1: &RepeatPosition, repeat2: &RepeatPosition) -> (bool, Option<String>) {
+    let r1_seq = &repeat1.sequence;
+    let r2_seq = &repeat2.sequence;
+    let is_equal = utils::string_rotation(r1_seq, r2_seq)
+        || utils::string_rotation(&utils::reverse_complement(r1_seq), r2_seq)
+        || utils::string_rotation(r1_seq, &utils::reverse_complement(r2_seq));
+
+    if is_equal {
+        (is_equal, Some(utils::lms(r1_seq, r2_seq)))
+    } else {
+        (is_equal, None)
+    }
+}
+
 /// Takes the final aggregation of potential telomeric repeats across
 /// chromosomes and also potentially across different lengths and tries
 /// to find the most likely telomeric repeat. See [`utils::format_telomeric_repeat()`]
 /// for the explanation of the formatting.
+/// FIXME: we compare telomeric repeats of different lengths here! sort that out.
 fn get_telomeric_repeat_estimates(
     telomeric_repeats: &mut RepeatPositions,
 ) -> Result<Vec<(String, i32)>> {
-    // can't get all the combinations if we only have 1 element.
-    eprintln!("{:?}", telomeric_repeats);
-    if telomeric_repeats.len() == 1 {
-        let count = telomeric_repeats.0[0].get_count();
-        let seq = &telomeric_repeats.0[0].sequence;
-        return Ok(vec![(seq.clone(), count as i32)]);
-    }
+    let groups = telomeric_repeats.make_length_groups();
+
     // we need to compare all elements against all others
     let mut map: HashMap<String, i32> = HashMap::new();
-    // so we don't compare the same thing twice.
-    let mut tracker: Vec<usize> = Vec::new();
-    // create all combinations of indices
-    let it = (0..telomeric_repeats.len()).combinations(2);
 
-    // iterate over combinations
-    for comb in it {
-        let first = &telomeric_repeats.0[comb[0]];
-        let second = &telomeric_repeats.0[comb[1]];
-        // if the combination is a string rotation (or its reverse complement)
-        // then combine
-        if utils::string_rotation(&first.sequence, &second.sequence)
-            || utils::string_rotation(
-                &utils::reverse_complement(&first.sequence),
-                &second.sequence,
-            )
-            || utils::string_rotation(
-                &first.sequence,
-                &utils::reverse_complement(&second.sequence),
-            )
-        {
-            // if comb[0] || comb[1] not in tracker...
-            // as we already added the contents of the tracked telomeric repeats
-            // we do not want to count them again.
-            if !tracker.contains(&comb[0]) && !tracker.contains(&comb[1]) {
+    for (_, telomeric_repeats_i) in groups {
+        // deal with this separately, as if there's only one repeat
+        // estimated, we can't go further
+        if telomeric_repeats_i.len() == 1 {
+            let count = telomeric_repeats_i[0].get_count();
+            let seq = &telomeric_repeats_i[0].sequence;
+            map.insert(seq.clone(), count as i32);
+            continue;
+        }
+        // so we don't compare the same thing twice.
+        let mut tracker: Vec<usize> = Vec::new();
+        // create all combinations of indices
+        let it = (0..telomeric_repeats_i.len()).combinations(2);
+
+        // iterate over combinations
+        for comb in it {
+            let first = &telomeric_repeats_i[comb[0]];
+            let second = &telomeric_repeats_i[comb[1]];
+
+            let (is_rotation, potential_sequence) = test_repeats(first, second);
+            // eprintln!("first comb: {:?}\tsecond comb: {:?}", first, second);
+            // if the combination is a string rotation (or its reverse complement)
+            // then combine
+            if is_rotation {
+                let sequence = potential_sequence.unwrap();
+                // if comb[0] || comb[1] not in tracker...
+                // as we already added the contents of the tracked telomeric repeats
+                // we do not want to count them again.
                 let count = map
                     // relies on the telomeric repeat string resolving to a 'canonical'
                     // or unique form of the string, see utils::lms()
-                    .entry(utils::lms(&first.sequence, &second.sequence))
+                    .entry(sequence)
                     .or_insert(first.get_count() as i32 + second.get_count() as i32);
-                *count += first.get_count() as i32 + second.get_count() as i32;
-
-                tracker.push(comb[0]);
-                tracker.push(comb[1]);
+                if !tracker.contains(&comb[0]) && !tracker.contains(&comb[1]) {
+                    *count += first.get_count() as i32 + second.get_count() as i32;
+                }
             }
+            tracker.push(comb[0]);
+            tracker.push(comb[1]);
         }
     }
 
@@ -421,30 +488,11 @@ fn filter_count_vec(v: &mut Vec<(String, i32)>) -> Result<()> {
 mod tests {
     use super::*;
 
+    // three kinds of short repeat sequences
+    // that aren't telomeric repeats.
     const R1: &str = "AAAAAAAA";
     const R2: &str = "ATATATAT";
     const R3: &str = "AATAATAAT";
-    // A tiny genome with telomeric repeats at the end
-    const GENOME: &str =
-        "AACCTAACCTAACCTAACCTAACCTAACCTAACCTAACCTAACCTTATAGGGACATTGACCGAAGGGGGCACATAGACAACCTAACCTAACCTAACCTAACCTAACCTAACCTAACCTAACCT";
-    const CHUNK_LENGTH: usize = 5;
-    const DIST_FROM_CHROM_END: f64 = 0.2;
-
-    fn generate_chunks() -> Vec<ChunkedFasta> {
-        let record = bio::io::fasta::Record::with_attrs("id1", None, GENOME.as_bytes());
-        chunk_fasta(
-            record,
-            CHUNK_LENGTH,
-            DIST_FROM_CHROM_END,
-            GENOME.len(),
-            false,
-        )
-    }
-
-    fn generate_indexes() -> RepeatPositions {
-        let chunks = generate_chunks();
-        calculate_indexes(chunks, CHUNK_LENGTH, false, "test".into(), 0).unwrap()
-    }
 
     #[test]
     fn check_repeat_period1() {
@@ -461,10 +509,48 @@ mod tests {
         let p = check_repeats(R3);
         assert_eq!(p, 3)
     }
+
+    // A tiny genome with telomeric repeats at the end
+    const GENOME: &str = "AACCTAACCTAACATATCGTAACCTAACCTAACCTAACCTAACATATCGTAACCTAACCT";
+    //                                                  ^ repeats here
+    const GENOME_2: &str = "AACCTAACCTTAAATTAAATAACCTAACCTAACCTAACCTTAAATTAAATAACCTAACCT";
+    //                                                    ^ repeats here
+    // we are looking at 5-mers
+    const CHUNK_LENGTH: usize = 5;
+    // include the whole sequence.
+    const DIST_FROM_CHROM_END: f64 = 0.5;
+
+    fn split_by_dist(genome: &str) -> [Vec<u8>; 2] {
+        let record = bio::io::fasta::Record::with_attrs("id1", None, genome.as_bytes());
+        split_seq_by_distance(record, DIST_FROM_CHROM_END, genome.len())
+    }
+
+    // GENOME/GENOME_2 are just two meta-repeats, so this should just be in half
     #[test]
-    fn test_chunk_fasta() {
-        let chunks = generate_chunks();
+    fn test_split_left() {
+        let seq = &split_by_dist(GENOME)[0];
+        let left = std::str::from_utf8(seq).unwrap();
+        assert_eq!(left, "AACCTAACCTAACATATCGTAACCTAACCT")
+    }
+
+    #[test]
+    fn test_split_right() {
+        let seq = &split_by_dist(GENOME)[1];
+        let left = std::str::from_utf8(seq).unwrap();
+        assert_eq!(left, "AACCTAACCTAACATATCGTAACCTAACCT")
+    }
+
+    fn generate_chunks_left(genome: &str) -> Vec<ChunkedFasta> {
+        let left = &split_by_dist(genome)[0];
+        chunk_fasta(left.clone(), CHUNK_LENGTH, false, "".into())
+    }
+
+    #[test]
+    fn test_chunks_left() {
+        let chunks = generate_chunks_left(GENOME);
+        // in the left
         assert_eq!(
+            chunks,
             vec![
                 ChunkedFasta {
                     position: 0,
@@ -475,11 +561,35 @@ mod tests {
                     sequence: "AACCT".into()
                 },
                 ChunkedFasta {
-                    position: 10,
+                    position: 20,
                     sequence: "AACCT".into()
                 },
                 ChunkedFasta {
-                    position: 15,
+                    position: 25,
+                    sequence: "AACCT".into()
+                }
+            ]
+        )
+    }
+
+    fn generate_chunks_right() -> Vec<ChunkedFasta> {
+        let left = &split_by_dist(GENOME)[1];
+        chunk_fasta(left.clone(), CHUNK_LENGTH, false, "".into())
+    }
+
+    #[test]
+    fn test_chunks_right() {
+        let chunks = generate_chunks_right();
+        // in the right
+        assert_eq!(
+            chunks,
+            vec![
+                ChunkedFasta {
+                    position: 0,
+                    sequence: "AACCT".into()
+                },
+                ChunkedFasta {
+                    position: 5,
                     sequence: "AACCT".into()
                 },
                 ChunkedFasta {
@@ -489,41 +599,50 @@ mod tests {
                 ChunkedFasta {
                     position: 25,
                     sequence: "AACCT".into()
-                },
-                ChunkedFasta {
-                    position: 30,
-                    sequence: "AACCT".into()
-                },
-                ChunkedFasta {
-                    position: 35,
-                    sequence: "AACCT".into()
-                },
-                ChunkedFasta {
-                    position: 40,
-                    sequence: "AACCT".into()
                 }
-            ],
-            chunks
+            ]
         )
     }
+
+    fn generate_indexes_left(genome: &str) -> RepeatPositions {
+        let chunks = generate_chunks_left(genome);
+        calculate_indexes(chunks, CHUNK_LENGTH, false, "test".into(), 0).unwrap()
+    }
+
     #[test]
-    fn test_index_calculation1() {
-        let indices = generate_indexes();
+    fn test_index_left() {
+        let indices = generate_indexes_left(GENOME);
         assert_eq!(
             indices.0,
             // i.e. there are 9 matches for AACCT
-            vec![RepeatPosition {
-                start: 0,
-                end: 45,
-                sequence: "AACCT".into()
-            }]
+            vec![
+                RepeatPosition {
+                    id: "test".into(),
+                    start: 0,
+                    end: 10,
+                    sequence: "AACCT".into()
+                },
+                RepeatPosition {
+                    id: "test".into(),
+                    start: 20,
+                    end: 30,
+                    sequence: "AACCT".into()
+                }
+            ]
         )
     }
     #[test]
-    fn test_get_telomeric_repeat_estimates() {
-        let mut indices = generate_indexes();
-        let estimates = get_telomeric_repeat_estimates(&mut indices).unwrap();
+    fn test_get_length_groups() {
+        let indices = generate_indexes_left(GENOME_2);
+        // we have AACCT 0-10, TAAAT 10-20, AACCT 20-30
+        let map_len = indices.make_length_groups().get(&5).unwrap().len();
+        assert_eq!(map_len, 3);
+    }
 
-        assert_eq!(estimates, vec![("AACCT".into(), 9)])
+    #[test]
+    fn test_get_telomeric_repeat_estimates() {
+        let mut indices = generate_indexes_left(GENOME_2);
+        let res = get_telomeric_repeat_estimates(&mut indices).unwrap();
+        assert_eq!(res, vec![("AACCT".to_string(), 4)]);
     }
 }
