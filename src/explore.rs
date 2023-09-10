@@ -211,11 +211,7 @@ fn chunk_fasta(
     // can use the enumerate to check whether the position is < dist from start or > dist from end.
     // FIXME: how do I check if this is the first in a run?
     for (a, b) in chunks.zip(chunks_plus_one) {
-        // if chunk contains N, skip.
-        if a.contains(&78) || b.contains(&78) {
-            pos += chunk_length;
-            continue;
-        } else if a == b {
+        if a == b {
             if is_first_consecutive {
                 indexes.push(ChunkedFasta {
                     position: pos,
@@ -398,6 +394,7 @@ fn get_telomeric_repeat_estimates(
     telomeric_repeats: &mut RepeatPositions,
 ) -> Result<Vec<(String, i32)>> {
     let groups = telomeric_repeats.make_length_groups();
+    eprintln!("{:#?}", groups);
 
     // we need to compare all elements against all others
     let mut map: HashMap<String, i32> = HashMap::new();

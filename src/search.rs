@@ -94,20 +94,23 @@ fn write_window_counts<T: std::io::Write>(
 ) -> Result<()> {
     // get forward and reverse sequences, and length
     // to remove overlapping matches.
-    let forward_telomeric_seq = telomeric_repeat;
-    let reverse_telomeric_seq = utils::reverse_complement(forward_telomeric_seq);
+    let forward_telomeric_seq = telomeric_repeat.to_uppercase();
+    let reverse_telomeric_seq = utils::reverse_complement(&forward_telomeric_seq).to_uppercase();
     let telomeric_length = forward_telomeric_seq.len();
 
     // create the iterator in each loop iteration isnt costly is it?
     let windows = sequence.seq().chunks(window_size);
     // keep track of the window size
-    let mut window_index = window_size;
+
+    let mut start = 0;
+    let mut end = window_size;
+
     // iterate over windows
-    for window in windows {
+    for (i, window) in windows.enumerate() {
         // make window uppercase
         let windows_upper = str::from_utf8(window)?.to_uppercase();
         // for each window, find the motifs in this
-        let forward_motif = utils::find_motifs(forward_telomeric_seq, &windows_upper);
+        let forward_motif = utils::find_motifs(&forward_telomeric_seq, &windows_upper);
         let reverse_motif = utils::find_motifs(&reverse_telomeric_seq, &windows_upper);
 
         // remove overlapping matches
@@ -121,15 +124,20 @@ fn write_window_counts<T: std::io::Write>(
         let forward_repeat_number = forward_motif_noverlap.len();
         let reverse_repeat_number = reverse_motif_noverlap.len();
         // write to file
+        // increment window
+        if i != 0 {
+            start += window_size;
+            end += window_size;
+        }
+        if end > sequence.seq().len() {
+            end = sequence.seq().len();
+        }
+
         if extension == "tsv" {
             writeln!(
                 file,
                 "{}\t{}\t{}\t{}\t{}",
-                id,
-                window_index,
-                forward_repeat_number,
-                reverse_repeat_number,
-                forward_telomeric_seq
+                id, end, forward_repeat_number, reverse_repeat_number, forward_telomeric_seq
             )?;
         } else {
             // for bedgraph only four columns, and sum the forward & reverse for convenience
@@ -137,13 +145,61 @@ fn write_window_counts<T: std::io::Write>(
                 file,
                 "{}\t{}\t{}\t{}",
                 id,
-                window_index - window_size,
-                window_index,
+                start,
+                end,
                 forward_repeat_number + reverse_repeat_number,
             )?;
         }
-        // increment window
-        window_index += window_size;
     }
+
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io::{LineWriter, Read};
+
+    use super::write_window_counts;
+
+    // a wrapper for making a bio::io::fasta record
+    fn make_record(id: &str, seq: &[u8]) -> bio::io::fasta::Record {
+        bio::io::fasta::Record::with_attrs(id, None, seq)
+    }
+
+    // take a record, write to a vector (fake file), then read out of this the output.
+    fn calc_windows(rec: bio::io::fasta::Record, repeat: &str, ws: usize) -> String {
+        let file = Vec::new();
+        let mut lw = LineWriter::new(file);
+        let id = rec.id().to_owned();
+
+        write_window_counts(rec, &mut lw, repeat, ws, id, "tsv").unwrap();
+
+        // read file contents to new vec
+        let mut out = Vec::new();
+        // we created a line writer, so we need the underlying writer
+        let c = lw.into_inner().unwrap();
+        let mut d = c.as_slice();
+        d.read_to_end(&mut out).unwrap();
+
+        String::from_utf8(out).unwrap()
+    }
+
+    #[test]
+    fn test_search_1() {
+        let rec = make_record(
+            "test1",
+            b"TTAGGTTAGGTTAGGCAGCATCACACTGATCATCTGATTAGGTTAGGTTAGG",
+        );
+
+        let windows_calculation = calc_windows(rec, "TTAGG", 20);
+
+        let rows: Vec<&str> = windows_calculation.lines().collect();
+
+        // three in first window
+        assert_eq!(rows[0], "test1\t20\t3\t0\tTTAGG");
+        // none in second
+        assert_eq!(rows[1], "test1\t40\t0\t0\tTTAGG");
+        // two in third
+        assert_eq!(rows[2], "test1\t52\t2\t0\tTTAGG");
+    }
 }

@@ -137,9 +137,10 @@ fn write_window_counts<T: std::io::Write>(
         // create the iterator in each loop iteration isnt costly is it?
         let windows = sequence.seq().chunks(window_size);
         // keep track of the window size
-        let mut window_index = window_size;
+
+        let mut end = window_size;
         // iterate over windows
-        for window in windows {
+        for (i, window) in windows.enumerate() {
             // make window uppercase
             let windows_upper = str::from_utf8(window)?.to_uppercase();
             // for each window, find the motifs in this
@@ -156,21 +157,80 @@ fn write_window_counts<T: std::io::Write>(
             // the number of matches for forward/reverse
             let forward_repeat_number = forward_motif_noverlap.len();
             let reverse_repeat_number = reverse_motif_noverlap.len();
+
+            if i != 0 {
+                end += window_size;
+            }
+            if end > sequence.seq().len() {
+                end = sequence.seq().len();
+            }
             // write to file
             writeln!(
                 file,
                 "{}\t{}\t{}\t{}\t{}",
-                id,
-                window_index,
-                forward_repeat_number,
-                reverse_repeat_number,
-                forward_telomeric_seq
+                id, end, forward_repeat_number, reverse_repeat_number, forward_telomeric_seq
             )?;
-            // increment window
-            window_index += window_size;
         }
         // go to the next telomeric repeat (if there is one)
         telomeric_repeat_index += 1;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io::{LineWriter, Read};
+
+    use crate::clades::{Seq, TelomereSeq};
+
+    use super::write_window_counts;
+
+    // a wrapper for making a bio::io::fasta record
+    fn make_record(id: &str, seq: &[u8]) -> bio::io::fasta::Record {
+        bio::io::fasta::Record::with_attrs(id, None, seq)
+    }
+
+    // take a record, write to a vector (fake file), then read out of this the output.
+    fn calc_windows(rec: bio::io::fasta::Record, ts: TelomereSeq, ws: usize) -> String {
+        let file = Vec::new();
+        let mut lw = LineWriter::new(file);
+        let id = rec.id().to_owned();
+
+        let telomeric_repeat = *ts.seq.0;
+        write_window_counts(rec, &mut lw, ts, telomeric_repeat, ws, id).unwrap();
+
+        // read file contents to new vec
+        let mut out = Vec::new();
+        // we created a line writer, so we need the underlying writer
+        let c = lw.into_inner().unwrap();
+        let mut d = c.as_slice();
+        d.read_to_end(&mut out).unwrap();
+
+        String::from_utf8(out).unwrap()
+    }
+
+    #[test]
+    fn test_search_1() {
+        let rec = make_record(
+            "test1",
+            b"AAACCCTAAACCCTAAACCCTTGAGAGAGGGGGTGTGGGGAGGGGTTGAGAAACCCT",
+        );
+
+        let apiales = TelomereSeq {
+            clade: "Apiales",
+            seq: Seq(Box::new(&["AAACCCT"])),
+            length: 1,
+        };
+
+        let windows_calculation = calc_windows(rec, apiales, 20);
+
+        let rows: Vec<&str> = windows_calculation.lines().collect();
+
+        // three in first window
+        assert_eq!(rows[0], "test1\t20\t2\t0\tAAACCCT");
+        // none in second
+        assert_eq!(rows[1], "test1\t40\t0\t0\tAAACCCT");
+        // two in third
+        assert_eq!(rows[2], "test1\t57\t1\t0\tAAACCCT");
+    }
 }
