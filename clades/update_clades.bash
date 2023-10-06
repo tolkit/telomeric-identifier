@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 
+curl -L https://docs.google.com/spreadsheets/d/16zCtyMrUA6akx9O3ihKK63PZrz9OtmjhVzvO0cQu0Rw/export?exportFormat=csv -o ./curated.csv
+
 # parse this data to Rust
 python3 build_clades.py > clades.txt
 
 # remove in place the variables
-sed '/\/\/ automated input start/,/\/\/ automated input end/{//!d}' ../src/clades.rs > ./temp.rs
+gsed '/\/\/ automated input start/,/\/\/ automated input end/{//!d}' ../src/clades.rs > ./temp.rs
 
 # insert the new ones
 # get line first

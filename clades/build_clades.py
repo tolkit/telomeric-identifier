@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 
-import requests
 import pandas as pd
 from io import StringIO
 
@@ -42,22 +41,10 @@ def lookahead(iterable):
     # Report the last value.
     yield last, False
 
+df = pd.read_table("./curated.csv", delimiter=",")
 
-tsv = requests.get(
-    "https://raw.githubusercontent.com/tolkit/a-telomeric-repeat-database/main/data/telo_database.tsv"
-)
-
-tsv_raw = tsv.text
-
-f = StringIO(tsv_raw)
-df = pd.read_table(f, delimiter="\t")
-
-# filter out problematic groups
-# agaricomycetes and diptera come to mind...
-df = df[~df["order"].isin(["Diptera", "Agaricomycetes"])]
-
-# group by class(?)
-gb_class = df.groupby(["order"])["telo_seq_1"].apply(list)
+# group by order
+gb_order = df.groupby(["Order"])["Telomeric repeat"].apply(list)
 
 # now let's print some Rust!
 
@@ -67,7 +54,7 @@ print(
     pub static CLADES: &[&str] = &["""
 )
 
-for i, v in gb_class.items():
+for i, v in gb_order.items():
     omit_pure_repeats = filter_telo_repeats(v)
     if omit_pure_repeats:
         print('        "', i, '",', sep="")
@@ -85,7 +72,7 @@ print(
         let result = match clade {"""
 )
 
-for i, v in gb_class.items():
+for i, v in gb_order.items():
     omit_pure_repeats = filter_telo_repeats(v)
     omit_pure_repeats_list = list(set(omit_pure_repeats))
 
