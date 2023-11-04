@@ -4,7 +4,7 @@
 
 # A Telomere Identification toolKit (`tidk`)
 
-`tidk` is a toolkit to identify and visualise telomeric repeats for the Darwin Tree of Life genomes. `tidk` works especially well on chromosomal genomes, but can also work on PacBio HiFi reads well (see <a href="https://github.com/tolkit/a-telomeric-repeat-database">the telomeric repeat database</a> for many examples). There are a few modules in the tool, which may be useful to anyone investigating telomeric repeat sequences in a genome.
+`tidk` is a toolkit to identify and visualise telomeric repeats for the Darwin Tree of Life genomes. `tidk` works especially well on chromosomal genomes, but can also work on PacBio HiFi reads as well (see <a href="https://github.com/tolkit/a-telomeric-repeat-database">the telomeric repeat database</a> for many examples). There are a few modules in the tool, which may be useful to anyone investigating telomeric repeat sequences in a genome.
 
 1. `explore` - tries to find the telomeric repeat unit in the genome.
 2. `find` and `search` are essentially the same. They identify a repeat sequence in windows across the genome. `find` uses an in-built table of telomeric repeats, in `search` you supply your own.
@@ -32,10 +32,10 @@ Below is some usage guidance. From 0.2.3 onwards there have been breaking change
 
 ### Explore 
 
-`tidk explore` will attempt to find the simple telomeric repeat unit in the genome provided. It will report this repeat in its canonical form (e.g. TTAGG -> AACCT). Unlike previous versions, only a simple TSV is printed to STDOUT. Use the `distance` parameter to search only in a proportion of the chromosome arms. The default is 1% of the length of the chromosome either side, but feel free to change this. In particular with raw reads (PacBio), I'd recommend setting the distance flag to 1 (`--distance 1` or `--distance=1`), to process the full length of each read.
+`tidk explore` will attempt to find the simple telomeric repeat unit in the genome provided. It will report this repeat in its canonical form (e.g. TTAGG -> AACCT). Unlike previous versions, only a simple TSV is printed to STDOUT. Use the `distance` parameter to search only in a proportion of the chromosome arms. The default is 1% of the length of the chromosome either side, but feel free to change this. In particular with raw reads (PacBio), I'd recommend setting the distance flag to 0.5 (`--distance 0.5` or `--distance=0.5`), to process the full length of each read.
 
 For example:
-`tidk explore --minimum 5 --maximum 12 fastas/iyBomHort1_1.20210303.curated_primary.fa` searches the genome for repeats from length 5 to length 12 sequentially on the <a href="https://www.ebi.ac.uk/ena/browser/view/PRJEB43539"><i>Bombus hortorum</i> genome</a>.
+`tidk explore --minimum 5 --maximum 12 fastas/iyBomHort1_1.20210303.curated_primary.fa > out.tsv` searches the genome for repeats from length 5 to length 12 sequentially on the <a href="https://www.ebi.ac.uk/ena/browser/view/PRJEB43539"><i>Bombus hortorum</i> genome</a>.
 
 ```
 Use a range of kmer sizes to find potential telomeric repeats.
@@ -51,7 +51,7 @@ Options:
   -m, --minimum [<MINIMUM>]      Minimum length of substring [default: 5]
   -x, --maximum [<MAXIMUM>]      Maximum length of substring [default: 12]
   -t, --threshold [<THRESHOLD>]  Positions of repeats are only reported if they occur sequentially in a greater number than the threshold [default: 100]
-      --distance [<DISTANCE>]    The distance from the end of the chromosome as a proportion of chromosome length. [default: 0.1]
+      --distance [<DISTANCE>]    The distance from the end of the chromosome as a proportion of chromosome length. Must range from 0-0.5. [default: 0.01]
   -v, --verbose                  Print verbose output.
       --log                      Output a log file.
   -h, --help                     Print help
@@ -60,7 +60,7 @@ Options:
 
 ### Find
 
-`tidk find` will take an input clade, and match the known telomeric repeat for that clade (or repeats plural) and search the genome. Uses the <a href="http://telomerase.asu.edu/sequences_telomere.html">telomeric repeat database</a>. As more telomeric repeats are found and added, the dictionary of sequences used will increase. We have a lot more clades of late, but do sanity check the repeats as the database is not yet curated. I'm actively working on a curated database.
+`tidk find` will take an input clade, and match the known or putative telomeric repeat for that clade (or repeats plural) and search the genome. Now uses a custom curated telomeric repeat database. As more telomeric repeats are found and added, the dictionary of sequences used will increase.
 
 ```
 Supply the name of a clade your organsim belongs to, and this submodule will find all telomeric repeat matches for that clade.
@@ -72,7 +72,7 @@ Arguments:
 
 Options:
   -w, --window [<WINDOW>]  Window size to calculate telomeric repeat counts in [default: 10000]
-  -c, --clade <CLADE>      The clade of organism to identify telomeres in [possible values: Accipitriformes, Actiniaria, Agaricales, Alismatales, Amphilepidida, Anura, Apiales, Aplousobranchia, Aquifoliales, Araneae, Artiodactyla, Asparagales, Asterales, Atheriniformes, Balanomorpha, Boraginales, Brassicales, Buxales, Camarodonta, Caprimulgiformes, Carcharhiniformes, Cardiida, Carnivora, Caryophyllales, Celastrales, Chaetocerotales, Cheilostomatida, Chiroptera, Chitonida, Chlamydomonadales, Coleoptera, Comatulida, Crassiclitellata, Cucurbitales, Cypriniformes, Decapoda, Dioctophymatida, Dipsacales, Ericales, Eucoccidiorida, Euglenales, Eulipotyphla, Fabales, Fagales, Forcipulatida, Fucales, Gentianales, Geophilomorpha, Geraniales, Gigartinales, Glomerida, Hemiptera, Heteronemertea, Hirudinida, Hymenoptera, Hypnales, Isochrysidales, Isopoda, Lamiales, Lepidoptera, Liliales, Lithobiomorpha, Littorinimorpha, Lunulariales, Lycopodiales, Malpighiales, Malvales, Megaloptera, Myrtales, Neuroptera, Nudibranchia, Odonata, Opiliones, Orthoptera, Ostreida, Palmariales, Pectinida, Pelecaniformes, Perciformes, Phlebobranchia, Phyllodocida, Plecoptera, Poales, Polytrichales, Primates, Procellariiformes, Pyrenomonadales, Ranunculales, Raphidioptera, Rhabditida, Rodentia, Rosales, Sabellida, Salmoniformes, Sapindales, Scombriformes, Scorpiones, Solanales, Sphagnales, Stolidobranchia, Symphypleona, Trichoptera, Trochida, Venerida]
+  -c, --clade <CLADE>      The clade of organism to identify telomeres in [possible values: Accipitriformes, Actiniaria, Anura, Apiales, Aplousobranchia, Asterales, Buxales, Caprimulgiformes, Carangiformes, Carcharhiniformes, Cardiida, Carnivora, Caryophyllales, Cheilostomatida, Chiroptera, Chlamydomonadales, Coleoptera, Crassiclitellata, Cypriniformes, Eucoccidiorida, Fabales, Fagales, Forcipulatida, Hemiptera, Heteronemertea, Hirudinida, Hymenoptera, Hypnales, Labriformes, Lamiales, Lepidoptera, Malpighiales, Myrtales, Odonata, Orthoptera, Pectinida, Perciformes, Phlebobranchia, Phyllodocida, Plecoptera, Pleuronectiformes, Poales, Rodentia, Rosales, Salmoniformes, Sapindales, Solanales, Symphypleona, Syngnathiformes, Trichoptera, Trochida, Venerida]
   -o, --output <OUTPUT>    Output filename for the TSVs (without extension)
   -d, --dir <DIR>          Output directory to write files to
   -p, --print              Print a table of clades, along with their telomeric sequences
@@ -109,7 +109,7 @@ Options:
 `tidk plot` will plot the output of `tidk search`.
 
 ```
-SVG plot of TSV generated from search.
+SVG plot of TSV generated from tidk search.
 
 Usage: tidk plot [OPTIONS] --tsv <TSV>
 
