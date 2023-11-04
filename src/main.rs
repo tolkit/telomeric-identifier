@@ -128,7 +128,6 @@ fn main() -> Result<()> {
                 )
                 .arg(
                     arg!(-e --extension [EXTENSION] "The extension, defining the output type of the file")
-                        .required_unless_present("print")
                         .default_value("tsv")
                         .value_parser(["tsv", "bedgraph"])
                 )

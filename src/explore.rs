@@ -394,7 +394,6 @@ fn get_telomeric_repeat_estimates(
     telomeric_repeats: &mut RepeatPositions,
 ) -> Result<Vec<(String, i32)>> {
     let groups = telomeric_repeats.make_length_groups();
-    eprintln!("{:#?}", groups);
 
     // we need to compare all elements against all others
     let mut map: HashMap<String, i32> = HashMap::new();
@@ -419,7 +418,6 @@ fn get_telomeric_repeat_estimates(
             let second = &telomeric_repeats_i[comb[1]];
 
             let (is_rotation, potential_sequence) = test_repeats(first, second);
-            // eprintln!("first comb: {:?}\tsecond comb: {:?}", first, second);
             // if the combination is a string rotation (or its reverse complement)
             // then combine
             if is_rotation {
