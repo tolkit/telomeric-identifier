@@ -1,6 +1,8 @@
 [<img alt="github" src="https://img.shields.io/badge/github-tolkit/tidk-8da0cb?style=for-the-badge&labelColor=555555&logo=github" height="20">](https://github.com/tolkit/telomeric-identifier)
 [<img alt="crates.io" src="https://img.shields.io/crates/v/tidk.svg?style=for-the-badge&color=fc8d62&logo=rust" height="20">](https://crates.io/crates/tidk)
 [<img alt="bioconda" src="https://img.shields.io/badge/bioconda-tidk-44A833?style=for-the-badge&labelColor=555555&logo=Anaconda" height="20">](https://bioconda.github.io/recipes/tidk/README.html)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.10091385.svg)](https://doi.org/10.5281/zenodo.10091385)
+
 
 # A Telomere Identification toolKit (`tidk`)
 
@@ -129,6 +131,16 @@ tidk find -c lepidoptera -o Xes fastas/ilXesXant1_1.20201023.curated_primary.fa
 
 tidk plot -t finder/Xes_telomeric_repeat_windows.tsv -o ilXes -h 120 -w 800
 ```
+
+## Cite
+
+If you use this software please cite:
+
+```
+Brown, M., González De la Rosa, P. M. and Mark, B. (2023) ‘A Telomere Identification Toolkit’. Zenodo. doi: 10.5281/zenodo.10091385.
+```
+
+Until such a time as an actual paper comes out!
 
 ## Cited by:
 
