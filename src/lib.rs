@@ -1,5 +1,6 @@
 use anyhow::Result;
 use chrono::Local;
+use clades::TelomereSeq;
 use clap::crate_version;
 use std::{io::Write, path::PathBuf};
 
@@ -45,7 +46,7 @@ impl SubCommand {
                         .get_one::<PathBuf>("fasta")
                         .expect("errored by clap");
                     let clade = matches.get_one::<String>("clade").expect("errored by clap");
-                    let clade_info = clades::return_telomere_sequence(clade);
+                    let clade_info: TelomereSeq = clade.parse()?;
                     let window_size = *matches.get_one::<usize>("window").expect("errored by clap");
 
                     let file_name = format!(
@@ -70,7 +71,7 @@ Date: {}
                         input_fasta.display(),
                         window_size,
                         clade,
-                        clade_info.seq.0.join(", ")
+                        clade_info.seq
                     );
 
                     // create file

@@ -1,3 +1,4 @@
+use crate::clades::TelomereSeq;
 use crate::{clades, utils, SubCommand};
 use anyhow::{Context, Result};
 use bio::io::fasta;
@@ -25,29 +26,27 @@ pub fn finder(matches: &clap::ArgMatches, sc: SubCommand) -> Result<()> {
     let reader = fasta::Reader::from_file(input_fasta)?;
 
     let clade = matches.get_one::<String>("clade").expect("errored by clap");
-    let clade_info = clades::return_telomere_sequence(clade);
-
-    if clade_info.length == 1 {
-        eprintln!(
+    let clade_info: TelomereSeq = clade.parse()?;
+    match clade_info.seq.len() {
+        0 => {}
+        1 => eprintln!(
             "[+]\tSearching genome for a single telomeric repeat: {}",
             clade_info
                 .seq
                 .get(0)
                 .context("Could not get the first element of `seq`.")?
-        );
-    } else if clade_info.length > 1 {
-        eprintln!(
-            "[+]\tSearching genome for {} telomeric repeats:",
-            clade_info.length
-        );
-        for telomeric_repeat in 0..clade_info.length {
-            eprintln!(
-                "[+]\t\t{}",
-                clade_info.seq.get(telomeric_repeat).context(format!(
-                    "Could not get the {} element of `seq`.",
-                    telomeric_repeat
-                ))?
-            );
+        ),
+        length => {
+            eprintln!("[+]\tSearching genome for {} telomeric repeats:", length);
+            for telomeric_repeat in 0..length {
+                eprintln!(
+                    "[+]\t\t{}",
+                    clade_info.seq.get(telomeric_repeat).context(format!(
+                        "Could not get the {} element of `seq`.",
+                        telomeric_repeat
+                    ))?
+                );
+            }
         }
     }
 
@@ -77,7 +76,7 @@ pub fn finder(matches: &clap::ArgMatches, sc: SubCommand) -> Result<()> {
 
     // extract the string from TelomereSeq struct
     // dereference here because of Box<T>
-    let telomeric_repeat = *clade_info.seq.0;
+    let telomeric_repeat = clade_info.seq.inner;
 
     // iterate over the fasta records
     for result in reader.records() {
@@ -118,7 +117,7 @@ fn write_window_counts<T: std::io::Write>(
     let mut telomeric_repeat_index = 0;
     loop {
         // break this loop if we reach the end of &[&str] of telomeric repeats
-        if clade_info.length == telomeric_repeat_index {
+        if clade_info.seq.len() == telomeric_repeat_index {
             break;
         }
 
@@ -161,9 +160,7 @@ fn write_window_counts<T: std::io::Write>(
             if i != 0 {
                 end += window_size;
             }
-            if end > sequence.seq().len() {
-                end = sequence.seq().len();
-            }
+            end = std::cmp::min(end, sequence.seq().len());
             // write to file
             writeln!(
                 file,
@@ -196,7 +193,7 @@ mod tests {
         let mut lw = LineWriter::new(file);
         let id = rec.id().to_owned();
 
-        let telomeric_repeat = *ts.seq.0;
+        let telomeric_repeat = ts.seq.inner;
         write_window_counts(rec, &mut lw, ts, telomeric_repeat, ws, id).unwrap();
 
         // read file contents to new vec
@@ -217,9 +214,10 @@ mod tests {
         );
 
         let apiales = TelomereSeq {
-            clade: "Apiales",
-            seq: Seq(Box::new(&["AAACCCT"])),
-            length: 1,
+            clade: crate::clades::Clade::Apiales,
+            seq: Seq {
+                inner: &["AAACCCT"],
+            },
         };
 
         let windows_calculation = calc_windows(rec, apiales, 20);

@@ -1,7 +1,8 @@
 use anyhow::Result;
 use clap::{arg, builder::ArgPredicate, crate_version, value_parser, Arg, Command};
 use std::path::PathBuf;
-use tidk::{clades::CLADES, explore, finder, plot, search, SubCommand};
+use strum::VariantNames;
+use tidk::{clades::Clade, explore, finder, plot, search, SubCommand};
 
 fn main() -> Result<()> {
     // command line options
@@ -30,7 +31,7 @@ fn main() -> Result<()> {
                 .arg(
                     arg!(-c --clade <CLADE> "The clade of organism to identify telomeres in")
                         .required_unless_present("print")
-                        .value_parser(CLADES.to_owned())
+                        .value_parser(Clade::VARIANTS.to_owned())
                 )
                 .arg(
                     arg!(-o --output <OUTPUT> "Output filename for the TSVs (without extension)")
