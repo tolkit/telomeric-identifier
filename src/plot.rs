@@ -19,6 +19,12 @@ pub fn plot(matches: &clap::ArgMatches) -> Result<()> {
     let output = matches
         .get_one::<PathBuf>("output")
         .expect("defaulted by clap");
+    let font_size = matches
+        .get_one::<i32>("fontsize")
+        .expect("defaulted by clap");
+    let stroke_width = matches
+        .get_one::<i32>("strokewidth")
+        .expect("defaulted by clap");
 
     // parse the tsv
     let parsed_tsv = parse_tsv(tsv.to_path_buf())?;
@@ -58,7 +64,7 @@ pub fn plot(matches: &clap::ArgMatches) -> Result<()> {
                  </svg>",
             width,
             height,
-            add_all_path_elements(plot_data_filtered, *height_subplot as isize, *width)
+            add_all_path_elements(plot_data_filtered, *height_subplot as isize, *width, *font_size, *stroke_width)
         );
 
     svg_file.write_all(svg.as_bytes())?;
@@ -191,7 +197,13 @@ fn make_path_element(
 }
 
 /// Add the path elements from Vec<PlotData.path> to their SVG tags.
-fn add_all_path_elements(plot_data: Vec<PlotData>, height_subplot: isize, width: i32) -> String {
+fn add_all_path_elements(
+    plot_data: Vec<PlotData>,
+    height_subplot: isize,
+    width: i32,
+    font_size: i32,
+    stroke_width: i32,
+) -> String {
     let mut all_paths = String::new();
     let length = plot_data.len();
     // gap between subplots; could be added as a parameter.
@@ -200,22 +212,25 @@ fn add_all_path_elements(plot_data: Vec<PlotData>, height_subplot: isize, width:
     for (i, row) in plot_data.iter().enumerate() {
         // add text tag here
         all_paths += &format!(
-            "<text x='25' y='{}' class='chromosome_label' font-family='monospace'>{}\n↓</text>",
+            "<text x='{}' y='{}' class='chromosome_label' font-family='monospace' font-size='{}' font-weight='bold'>{}\n↓</text>",
+            (MARGIN / 2) + 5,
             (i as isize * height_subplot) + subplot_gap - 5 + MARGIN as isize,
+            font_size,
             row.id
         );
         // add axis tags here
         all_paths += &format!(
-            "<text x='{}' y='{}' class='x_axis_label' font-family='monospace'>{} ↑</text>",
-            // 37 aligns the up arrow
-            width - 2 * MARGIN - 37,
+            "<text x='{}' y='{}' class='x_axis_label' font-family='monospace' font-size='{}' font-weight='bold' text-anchor='end'>{} ↑</text>",
+            width - (MARGIN * 2) + MARGIN / 2,
             (i as isize * height_subplot) + subplot_gap - 5 + MARGIN as isize + height_subplot,
+            font_size,
             format_number_to_mb(row.max)
         );
         // reverse the order of the paths!
-        all_paths += &format!("<path d='{}' id='{}' class='chromosome_line' stroke='black' fill='none' stroke-width='1' transform='translate(0,{})'/>\n", 
+        all_paths += &format!("<path d='{}' id='{}' class='chromosome_line' stroke='black' fill='none' stroke-width='{}' transform='translate(0,{})'/>\n", 
                 plot_data[length - i - 1].path,
                 plot_data[length - i - 1].id,
+                stroke_width,
                 -(i as isize * height_subplot));
     }
     all_paths

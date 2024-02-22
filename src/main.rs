@@ -9,7 +9,7 @@ fn main() -> Result<()> {
         .version(crate_version!())
         .propagate_version(true)
         .arg_required_else_help(true)
-        .author("Max Brown <euphrasiamax@gmail.com>")
+        .author("Max Brown <max.carter-brown@aru.ac.uk>")
         .about("A Telomere Identification Toolkit.")
         .subcommand(
             Command::new("find")
@@ -160,7 +160,17 @@ fn main() -> Result<()> {
                         .value_parser(value_parser!(PathBuf))
                         .default_value("tidk-plot")
                 )
-        )
+                .arg(
+                    arg!(--fontsize [FONT_SIZE] "The font size of the axis labels in the plot")
+                        .value_parser(value_parser!(i32))
+                        .default_value("12")
+                )
+                .arg(
+                    arg!(--strokewidth [STROKE_WIDTH] "The stroke width of the line graph in the plot")
+                        .value_parser(value_parser!(i32))
+                        .default_value("2")
+                )
+            )
         .get_matches();
 
     // feed command line options to each main function
