@@ -403,7 +403,7 @@ fn get_telomeric_repeat_estimates(
         // estimated, we can't go further
         if telomeric_repeats_i.len() == 1 {
             let count = telomeric_repeats_i[0].get_count();
-            let seq = &telomeric_repeats_i[0].sequence;
+            let seq = utils::lex_min(&telomeric_repeats_i[0].sequence);
             map.insert(seq.clone(), count as i32);
             continue;
         }
