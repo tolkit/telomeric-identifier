@@ -37,7 +37,7 @@ Below is some usage guidance. From 0.2.3 onwards there have been breaking change
 `tidk explore` will attempt to find the simple telomeric repeat unit in the genome provided. It will report this repeat in its canonical form (e.g. TTAGG -> AACCT). Unlike previous versions, only a simple TSV is printed to STDOUT. Use the `distance` parameter to search only in a proportion of the chromosome arms. The default is 1% of the length of the chromosome either side, but feel free to change this. In particular with raw reads (PacBio), I'd recommend setting the distance flag to 0.5 (`--distance 0.5` or `--distance=0.5`), to process the full length of each read.
 
 For example:
-`tidk explore --minimum 5 --maximum 12 fastas/iyBomHort1_1.20210303.curated_primary.fa > out.tsv` searches the genome for repeats from length 5 to length 12 sequentially on the <a href="https://www.ebi.ac.uk/ena/browser/view/PRJEB43539"><i>Bombus hortorum</i> genome</a>.
+`tidk explore --minimum 5 --maximum 12 fastas/iyBomHort1_1.20210303.curated_primary.fa > out.tsv` searches the genome for repeats from length 5 to length 12 sequentially on the <a href="https://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/905/332/935/GCA_905332935.1_iyBomHort1.1/"><i>Bombus hortorum</i> genome</a>.
 
 ```
 Use a range of kmer sizes to find potential telomeric repeats.
