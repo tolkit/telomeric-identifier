@@ -160,7 +160,7 @@ pub fn lex_min(dna_string: &str) -> String {
     // string
     let lms_f = format!("{}{}", start_f, end_f);
     let lms_r = format!("{}{}", start_r, end_r);
-    let mut strings = vec![&lms_f, &lms_r];
+    let mut strings = [&lms_f, &lms_r];
     strings.string_sort_unstable(natural_lexical_cmp);
     strings[0].to_string()
 }
