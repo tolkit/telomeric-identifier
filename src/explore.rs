@@ -141,7 +141,8 @@ pub fn explore(matches: &clap::ArgMatches, sc: SubCommand) -> Result<()> {
     // costly calculation if threshold is too low.
     let est = get_telomeric_repeat_estimates(&mut repeat_postitions)?;
 
-    println!("canonical_repeat_unit\tcount");
+    // this is not technically a count - it's a count of runs > threshold
+    println!("canonical_repeat_unit\tcount_repeat_runs_gt_{}", threshold);
     for (cru, count) in est {
         println!("{}\t{}", cru, count);
     }
@@ -209,7 +210,6 @@ fn chunk_fasta(
 
     // this is the heavy lifting.
     // can use the enumerate to check whether the position is < dist from start or > dist from end.
-    // FIXME: how do I check if this is the first in a run?
     for (a, b) in chunks.zip(chunks_plus_one) {
         if a == b {
             if is_first_consecutive {
@@ -327,23 +327,15 @@ fn calculate_indexes(
                 end: *position2 + chunk_length,
                 sequence: sequence1.to_string(),
             });
-            // end = *position2 + chunk_length;
-            // eprintln!("FINAL:: START: {}\tEND: {}", start, end);
-            // FIXME: ITS HERE? ALSO NEED TO CHECK IF START/END IS DIFFERENT?
         } else if sequence1 == sequence2 && (position2 - position1) == sequence1.len() {
-            // start = *position1;
-            // end = *position2;
-            // eprintln!("EQUAL:: START: {}\tEND: {}", start, end);
             continue;
         } else if !(sequence1 == sequence2 && (position2 - position1) == sequence1.len()) {
-            // eprintln!("UNEQUAL:: START: {}\tEND: {}", start, end);
             collection.push(RepeatPosition {
                 id: id.clone(),
                 start,
                 end: *position1 + chunk_length,
                 sequence: sequence1.to_string(),
             });
-            // end = *position1 + chunk_length;
             start = *position2;
         }
     }
@@ -389,7 +381,6 @@ fn test_repeats(repeat1: &RepeatPosition, repeat2: &RepeatPosition) -> (bool, Op
 /// chromosomes and also potentially across different lengths and tries
 /// to find the most likely telomeric repeat. See [`utils::format_telomeric_repeat()`]
 /// for the explanation of the formatting.
-/// FIXME: we compare telomeric repeats of different lengths here! sort that out.
 fn get_telomeric_repeat_estimates(
     telomeric_repeats: &mut RepeatPositions,
 ) -> Result<Vec<(String, i32)>> {
