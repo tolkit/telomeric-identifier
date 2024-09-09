@@ -12,7 +12,6 @@ keywords = ["tidk", "telomere", "telomeric", "repeats", "genomics"]
 categories = ["command-line-utilities", "science"]
 
 [dependencies]
-rust-htslib = { version = "0.40.2", default-features = false }
 clap = { version = "4.1.3", features = ["cargo"] }
 rayon = "1.6.1"
 # in explore::get_telomeric_repeat_estimates()
