@@ -11,6 +11,7 @@
 1. `explore` - tries to find the telomeric repeat unit in the genome.
 2. `find` and `search` are essentially the same. They identify a repeat sequence in windows across the genome. `find` uses an in-built table of telomeric repeats, in `search` you supply your own.
 3. `plot` does what is says on the tin, and plots the csv output of `find` or `search` as an SVG.
+4. `build` builds the telomeric repeat database and saves on your local machine for use in `tidk find`.
 
 ## Install
 
@@ -31,6 +32,10 @@ To install into `$PATH` as `tidk`.
 ## Usage
 
 Below is some usage guidance. From 0.2.3 onwards there have been breaking changes to the CLI interface. They will be pointed out below, and in the release changelog.
+
+### Build
+
+Before using `tidk find`, you will need to fetch the data using `tidk build`. You can do this from version 0.2.6 onwards.
 
 ### Explore 
 
@@ -149,6 +154,3 @@ Until such a time as an actual paper comes out!
 - Leonard, Guy, et al. "A genome sequence assembly of the phototactic and optogenetic model fungus Blastocladiella emersonii reveals a diversified nucleotide-cyclase repertoire." **Genome Biology and Evolution** 14.12 (2022): evac157.
 - Edwards, Richard J., et al. "A phased chromosome-level genome and full mitochondrial sequence for the dikaryotic myrtle rust pathogen, Austropuccinia psidii." **BioRxiv** (2022): 2022-04.
 
-## Omissions
-
-Both `tidk trim` and `tidk min` have been removed from the latest version.
