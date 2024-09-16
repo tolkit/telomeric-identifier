@@ -1,24 +1,37 @@
-use std::{
-    boxed::Box,
-    fmt::{self, Display},
-};
+use anyhow::Result;
+use std::fmt::{self, Display};
 use tabled::{
     object::{Columns, Rows},
     Disable, Modify, Panel, Table, Tabled, Width,
 };
 
+use crate::build::{get_database_path, TelomereRepeatRow};
+
 /// A telomeric repeat sequence, or sequences.
 #[derive(Debug, Clone)]
-pub struct Seq<'a>(pub Box<&'a [&'a str]>);
+pub struct Seq(pub Vec<String>);
 
-impl Seq<'_> {
+impl Seq {
+    /// Create a new empty sequence.
+    pub fn new() -> Self {
+        Self(vec![])
+    }
+    /// Push a new sequence to the current list.
+    pub fn push(&mut self, seq: String) {
+        self.0.push(seq);
+    }
     /// Get the sequence corresponding to an index.
-    pub fn get(&self, index: usize) -> Option<&&str> {
+    pub fn get(&self, index: usize) -> Option<&String> {
         self.0.get(index)
+    }
+
+    /// Get the inner list of sequences.
+    pub fn get_inner(&self) -> &Vec<String> {
+        &self.0
     }
 }
 
-impl Display for Seq<'_> {
+impl Display for Seq {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let inner = self.0.join(", ");
         write!(f, "{}", inner)
@@ -28,421 +41,105 @@ impl Display for Seq<'_> {
 /// All the relevant information about a
 /// telomeric repeat sequence.
 #[derive(Debug, Clone, Tabled)]
-pub struct TelomereSeq<'a> {
+pub struct TelomereSeq {
     #[tabled(rename = "Clade")]
     /// The clade a telomeric repeat belongs to.
-    pub clade: &'a str,
+    pub clade: String,
     #[tabled(rename = "Telomeric repeat units")]
     /// The actual telomeric repeat sequence(s).
-    pub seq: Seq<'a>,
+    pub seq: Seq,
     /// How many different telomeric repeats counted
     /// for a clade.
     pub length: usize,
 }
 
-// automated input start
+impl TelomereSeq {
+    /// Create a new telomeric sequence.
+    pub fn new(clade: String, seq: Seq) -> Self {
+        Self {
+            clade,
+            seq,
+            length: 0,
+        }
+    }
 
-/// All the clades for which we have data.
-pub static CLADES: &[&str] = &[
-    "Accipitriformes",
-    "Actiniaria",
-    "Anura",
-    "Apiales",
-    "Aplousobranchia",
-    "Asterales",
-    "Buxales",
-    "Caprimulgiformes",
-    "Carangiformes",
-    "Carcharhiniformes",
-    "Cardiida",
-    "Carnivora",
-    "Caryophyllales",
-    "Cheilostomatida",
-    "Chiroptera",
-    "Chlamydomonadales",
-    "Coleoptera",
-    "Crassiclitellata",
-    "Cypriniformes",
-    "Eucoccidiorida",
-    "Fabales",
-    "Fagales",
-    "Forcipulatida",
-    "Hemiptera",
-    "Heteronemertea",
-    "Hirudinida",
-    "Hymenoptera",
-    "Hypnales",
-    "Labriformes",
-    "Lamiales",
-    "Lepidoptera",
-    "Malpighiales",
-    "Myrtales",
-    "Odonata",
-    "Orthoptera",
-    "Pectinida",
-    "Perciformes",
-    "Phlebobranchia",
-    "Phyllodocida",
-    "Plecoptera",
-    "Pleuronectiformes",
-    "Poales",
-    "Rodentia",
-    "Rosales",
-    "Salmoniformes",
-    "Sapindales",
-    "Solanales",
-    "Symphypleona",
-    "Syngnathiformes",
-    "Trichoptera",
-    "Trochida",
-    "Venerida",
-];
+    /// Push a new sequence to the list of sequences.
+    /// But only if the sequence is not already present.
+    pub fn push(&mut self, seq: String) {
+        if !self.seq.0.contains(&seq) {
+            self.seq.push(seq);
+        }
+    }
+
+    /// Set the clade
+    pub fn set_clade(&mut self, clade: String) {
+        self.clade = clade;
+    }
+
+    /// Set the length from the number of sequences.
+    pub fn set_length(&mut self) {
+        self.length = self.seq.0.len();
+    }
+}
+
+/// Read from a csv file containing all the clades
+/// and only return a list of clades.
+pub fn get_clades() -> Result<Vec<String>> {
+    // open from disk
+    let path = get_database_path()?;
+    let mut rdr = csv::Reader::from_path(path)?;
+
+    let mut out = vec![];
+
+    for result in rdr.deserialize() {
+        let record: TelomereRepeatRow = result?;
+        // just the orders
+        let order = record.order;
+        out.push(order);
+    }
+
+    // remove duplicates and empty strings
+    out.dedup();
+    out.retain(|e| e != "");
+
+    Ok(out)
+}
 
 /// A function to get a telomeric repeat sequence
 /// given a clade name.
-pub fn return_telomere_sequence(clade: &str) -> TelomereSeq {
-    let result = match clade {
-        "Accipitriformes" => TelomereSeq {
-            clade: "Accipitriformes",
-            seq: Seq(Box::new(&["AACCCT"])),
-            length: 1,
-        },
+pub fn return_telomere_sequence(clade: String) -> Result<TelomereSeq> {
+    let path = get_database_path()?;
+    // read the csv file
+    let mut rdr = csv::Reader::from_path(path)?;
 
-        "Actiniaria" => TelomereSeq {
-            clade: "Actiniaria",
-            seq: Seq(Box::new(&["AACCCT"])),
-            length: 1,
-        },
+    // iterate over records, if they match the clade
+    // push all the sequences into a TelomereSeq object
 
-        "Anura" => TelomereSeq {
-            clade: "Anura",
-            seq: Seq(Box::new(&["AACCCT"])),
-            length: 1,
-        },
+    let mut telomere_seq = TelomereSeq::new(clade.clone(), Seq::new());
 
-        "Apiales" => TelomereSeq {
-            clade: "Apiales",
-            seq: Seq(Box::new(&["AAACCCT"])),
-            length: 1,
-        },
+    for result in rdr.deserialize() {
+        let record: TelomereRepeatRow = result?;
+        if record.order == clade {
+            telomere_seq.push(record.telomeric_repeat);
+        }
+    }
 
-        "Aplousobranchia" => TelomereSeq {
-            clade: "Aplousobranchia",
-            seq: Seq(Box::new(&["AACCCT"])),
-            length: 1,
-        },
+    // set the length
+    telomere_seq.set_length();
 
-        "Asterales" => TelomereSeq {
-            clade: "Asterales",
-            seq: Seq(Box::new(&["AAACCCT"])),
-            length: 1,
-        },
-
-        "Buxales" => TelomereSeq {
-            clade: "Buxales",
-            seq: Seq(Box::new(&["AAACCCT"])),
-            length: 1,
-        },
-
-        "Caprimulgiformes" => TelomereSeq {
-            clade: "Caprimulgiformes",
-            seq: Seq(Box::new(&["AACCCT"])),
-            length: 1,
-        },
-
-        "Carangiformes" => TelomereSeq {
-            clade: "Carangiformes",
-            seq: Seq(Box::new(&["AACCCT"])),
-            length: 1,
-        },
-
-        "Carcharhiniformes" => TelomereSeq {
-            clade: "Carcharhiniformes",
-            seq: Seq(Box::new(&["AACCCT"])),
-            length: 1,
-        },
-
-        "Cardiida" => TelomereSeq {
-            clade: "Cardiida",
-            seq: Seq(Box::new(&["AACCCT"])),
-            length: 1,
-        },
-
-        "Carnivora" => TelomereSeq {
-            clade: "Carnivora",
-            seq: Seq(Box::new(&["AACCCT"])),
-            length: 1,
-        },
-
-        "Caryophyllales" => TelomereSeq {
-            clade: "Caryophyllales",
-            seq: Seq(Box::new(&["AAACCCT"])),
-            length: 1,
-        },
-
-        "Cheilostomatida" => TelomereSeq {
-            clade: "Cheilostomatida",
-            seq: Seq(Box::new(&["AAACCCC"])),
-            length: 1,
-        },
-
-        "Chiroptera" => TelomereSeq {
-            clade: "Chiroptera",
-            seq: Seq(Box::new(&["AACCCT"])),
-            length: 1,
-        },
-
-        "Chlamydomonadales" => TelomereSeq {
-            clade: "Chlamydomonadales",
-            seq: Seq(Box::new(&["AACCCT"])),
-            length: 1,
-        },
-
-        "Coleoptera" => TelomereSeq {
-            clade: "Coleoptera",
-            seq: Seq(Box::new(&["AACCT", "ACCTG", "AACAGACCCG", "AACCC"])),
-            length: 4,
-        },
-
-        "Crassiclitellata" => TelomereSeq {
-            clade: "Crassiclitellata",
-            seq: Seq(Box::new(&["AAGGAC"])),
-            length: 1,
-        },
-
-        "Cypriniformes" => TelomereSeq {
-            clade: "Cypriniformes",
-            seq: Seq(Box::new(&["AACCCT"])),
-            length: 1,
-        },
-
-        "Eucoccidiorida" => TelomereSeq {
-            clade: "Eucoccidiorida",
-            seq: Seq(Box::new(&["AAACCCT"])),
-            length: 1,
-        },
-
-        "Fabales" => TelomereSeq {
-            clade: "Fabales",
-            seq: Seq(Box::new(&["AAACCCT"])),
-            length: 1,
-        },
-
-        "Fagales" => TelomereSeq {
-            clade: "Fagales",
-            seq: Seq(Box::new(&["AAACCCT"])),
-            length: 1,
-        },
-
-        "Forcipulatida" => TelomereSeq {
-            clade: "Forcipulatida",
-            seq: Seq(Box::new(&["AACCCT"])),
-            length: 1,
-        },
-
-        "Hemiptera" => TelomereSeq {
-            clade: "Hemiptera",
-            seq: Seq(Box::new(&["AAACCACCCT", "AACCATCCCT"])),
-            length: 2,
-        },
-
-        "Heteronemertea" => TelomereSeq {
-            clade: "Heteronemertea",
-            seq: Seq(Box::new(&["AACCCT"])),
-            length: 1,
-        },
-
-        "Hirudinida" => TelomereSeq {
-            clade: "Hirudinida",
-            seq: Seq(Box::new(&["AACCCT"])),
-            length: 1,
-        },
-
-        "Hymenoptera" => TelomereSeq {
-            clade: "Hymenoptera",
-            seq: Seq(Box::new(&[
-                "AAACCC",
-                "AAAGAACCT",
-                "AACCCAGACGC",
-                "AACCCGAACCT",
-                "AACCCTGACGC",
-                "AAAATTGTCCGTCC",
-                "AACCC",
-                "AACCCCAACCT",
-                "AAATGTGGAGG",
-                "AACCCAGACCC",
-                "ACCCAG",
-                "AACCCAGACCT",
-                "AACCCT",
-                "ACGGCAGCG",
-                "AACCT",
-            ])),
-            length: 15,
-        },
-
-        "Hypnales" => TelomereSeq {
-            clade: "Hypnales",
-            seq: Seq(Box::new(&["AAACCCT"])),
-            length: 1,
-        },
-
-        "Labriformes" => TelomereSeq {
-            clade: "Labriformes",
-            seq: Seq(Box::new(&["AACCCT"])),
-            length: 1,
-        },
-
-        "Lamiales" => TelomereSeq {
-            clade: "Lamiales",
-            seq: Seq(Box::new(&["AAACCCT"])),
-            length: 1,
-        },
-
-        "Lepidoptera" => TelomereSeq {
-            clade: "Lepidoptera",
-            seq: Seq(Box::new(&["AACCT"])),
-            length: 1,
-        },
-
-        "Malpighiales" => TelomereSeq {
-            clade: "Malpighiales",
-            seq: Seq(Box::new(&["AAACCCT"])),
-            length: 1,
-        },
-
-        "Myrtales" => TelomereSeq {
-            clade: "Myrtales",
-            seq: Seq(Box::new(&["AAACCCT"])),
-            length: 1,
-        },
-
-        "Odonata" => TelomereSeq {
-            clade: "Odonata",
-            seq: Seq(Box::new(&["AACCC"])),
-            length: 1,
-        },
-
-        "Orthoptera" => TelomereSeq {
-            clade: "Orthoptera",
-            seq: Seq(Box::new(&["AACCT"])),
-            length: 1,
-        },
-
-        "Pectinida" => TelomereSeq {
-            clade: "Pectinida",
-            seq: Seq(Box::new(&["AACCCT"])),
-            length: 1,
-        },
-
-        "Perciformes" => TelomereSeq {
-            clade: "Perciformes",
-            seq: Seq(Box::new(&["AACCCT"])),
-            length: 1,
-        },
-
-        "Phlebobranchia" => TelomereSeq {
-            clade: "Phlebobranchia",
-            seq: Seq(Box::new(&["AACCCT"])),
-            length: 1,
-        },
-
-        "Phyllodocida" => TelomereSeq {
-            clade: "Phyllodocida",
-            seq: Seq(Box::new(&["AACCCT"])),
-            length: 1,
-        },
-
-        "Plecoptera" => TelomereSeq {
-            clade: "Plecoptera",
-            seq: Seq(Box::new(&["AACCT"])),
-            length: 1,
-        },
-
-        "Pleuronectiformes" => TelomereSeq {
-            clade: "Pleuronectiformes",
-            seq: Seq(Box::new(&["AACCCT"])),
-            length: 1,
-        },
-
-        "Poales" => TelomereSeq {
-            clade: "Poales",
-            seq: Seq(Box::new(&["AAACCCT"])),
-            length: 1,
-        },
-
-        "Rodentia" => TelomereSeq {
-            clade: "Rodentia",
-            seq: Seq(Box::new(&["AACCCT"])),
-            length: 1,
-        },
-
-        "Rosales" => TelomereSeq {
-            clade: "Rosales",
-            seq: Seq(Box::new(&["AAACCCT"])),
-            length: 1,
-        },
-
-        "Salmoniformes" => TelomereSeq {
-            clade: "Salmoniformes",
-            seq: Seq(Box::new(&["AACCCT"])),
-            length: 1,
-        },
-
-        "Sapindales" => TelomereSeq {
-            clade: "Sapindales",
-            seq: Seq(Box::new(&["AAACCCT"])),
-            length: 1,
-        },
-
-        "Solanales" => TelomereSeq {
-            clade: "Solanales",
-            seq: Seq(Box::new(&["AACCCTG"])),
-            length: 1,
-        },
-
-        "Symphypleona" => TelomereSeq {
-            clade: "Symphypleona",
-            seq: Seq(Box::new(&["AACCT"])),
-            length: 1,
-        },
-
-        "Syngnathiformes" => TelomereSeq {
-            clade: "Syngnathiformes",
-            seq: Seq(Box::new(&["AACCCT"])),
-            length: 1,
-        },
-
-        "Trichoptera" => TelomereSeq {
-            clade: "Trichoptera",
-            seq: Seq(Box::new(&["AACCT"])),
-            length: 1,
-        },
-
-        "Trochida" => TelomereSeq {
-            clade: "Trochida",
-            seq: Seq(Box::new(&["AACCCT"])),
-            length: 1,
-        },
-
-        "Venerida" => TelomereSeq {
-            clade: "Venerida",
-            seq: Seq(Box::new(&["AACCCT"])),
-            length: 1,
-        },
-
-        _ => panic!("{} is not yet accounted for in this pipeline.", clade),
-    };
-    result
+    // return the telomeric sequence
+    Ok(telomere_seq)
 }
 // automated input end
 
 /// Pretty print a table containing all the information about
 /// telomeric repeats that we currently have.
-pub fn print_table() {
+pub fn print_table() -> Result<()> {
     let mut clade_vec = Vec::new();
 
-    for clade in CLADES {
-        clade_vec.push(return_telomere_sequence(clade));
+    let clades = get_clades()?;
+    for clade in clades {
+        clade_vec.push(return_telomere_sequence(clade)?);
     }
 
     eprintln!(
@@ -456,4 +153,6 @@ pub fn print_table() {
                 "This table is created from a curated database of repeats. This database can be found in its raw form here: https://github.com/tolkit/telomeric-identifier/tree/main/clades/curated.csv"
             )).with(Width::wrap(60).keep_words())
     );
+
+    Ok(())
 }

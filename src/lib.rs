@@ -3,6 +3,8 @@ use chrono::Local;
 use clap::crate_version;
 use std::{io::Write, path::PathBuf};
 
+/// For building the database
+pub mod build;
 /// A module where the clades are defined, and their
 /// respective telomeric repeats are enumerated.
 pub mod clades;
@@ -45,7 +47,7 @@ impl SubCommand {
                         .get_one::<PathBuf>("fasta")
                         .expect("errored by clap");
                     let clade = matches.get_one::<String>("clade").expect("errored by clap");
-                    let clade_info = clades::return_telomere_sequence(clade);
+                    let clade_info = clades::return_telomere_sequence(clade.clone());
                     let window_size = *matches.get_one::<usize>("window").expect("errored by clap");
 
                     let file_name = format!(
@@ -70,7 +72,7 @@ Date: {}
                         input_fasta.display(),
                         window_size,
                         clade,
-                        clade_info.seq.0.join(", ")
+                        clade_info?.seq.get_inner().join(", ")
                     );
 
                     // create file

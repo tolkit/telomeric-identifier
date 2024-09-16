@@ -14,7 +14,7 @@ use std::str;
 pub fn finder(matches: &clap::ArgMatches, sc: SubCommand) -> Result<()> {
     // print table of telomeric sequences
     if matches.get_flag("print") {
-        clades::print_table();
+        clades::print_table()?;
         process::exit(1);
     }
 
@@ -24,8 +24,14 @@ pub fn finder(matches: &clap::ArgMatches, sc: SubCommand) -> Result<()> {
         .clone();
     let reader = fasta::Reader::from_file(input_fasta)?;
 
-    let clade = matches.get_one::<String>("clade").expect("errored by clap");
-    let clade_info = clades::return_telomere_sequence(clade);
+    let clade = matches
+        .get_one::<String>("clade")
+        .expect("errored by clap")
+        .clone();
+
+    // FIXME: we want to make a function which will read the database from a file
+    // and then return the appropriate TelomereSeq.
+    let clade_info = clades::return_telomere_sequence(clade)?;
 
     if clade_info.length == 1 {
         eprintln!(
@@ -77,7 +83,7 @@ pub fn finder(matches: &clap::ArgMatches, sc: SubCommand) -> Result<()> {
 
     // extract the string from TelomereSeq struct
     // dereference here because of Box<T>
-    let telomeric_repeat = *clade_info.seq.0;
+    let telomeric_repeat = clade_info.seq.get_inner();
 
     // iterate over the fasta records
     for result in reader.records() {
@@ -110,7 +116,7 @@ fn write_window_counts<T: std::io::Write>(
     sequence: bio::io::fasta::Record,
     file: &mut LineWriter<T>,
     clade_info: clades::TelomereSeq,
-    telomeric_repeat: &[&str],
+    telomeric_repeat: &Vec<String>,
     window_size: usize,
     id: String,
 ) -> Result<()> {
@@ -125,13 +131,13 @@ fn write_window_counts<T: std::io::Write>(
         // get forward and reverse sequences, and length
         // to remove overlapping matches.
         let forward_telomeric_seq =
-            *telomeric_repeat
+            telomeric_repeat
                 .get(telomeric_repeat_index)
                 .context(format!(
                     "Could not get the telomeric repeat with index: {}.",
                     telomeric_repeat_index
                 ))?;
-        let reverse_telomeric_seq = utils::reverse_complement(forward_telomeric_seq);
+        let reverse_telomeric_seq = utils::reverse_complement(&forward_telomeric_seq);
         let current_telomeric_length = forward_telomeric_seq.len();
 
         // create the iterator in each loop iteration isnt costly is it?
@@ -144,7 +150,7 @@ fn write_window_counts<T: std::io::Write>(
             // make window uppercase
             let windows_upper = str::from_utf8(window)?.to_uppercase();
             // for each window, find the motifs in this
-            let forward_motif = utils::find_motifs(forward_telomeric_seq, &windows_upper);
+            let forward_motif = utils::find_motifs(&forward_telomeric_seq, &windows_upper);
             let reverse_motif = utils::find_motifs(&reverse_telomeric_seq, &windows_upper);
 
             // remove overlapping matches
@@ -196,8 +202,8 @@ mod tests {
         let mut lw = LineWriter::new(file);
         let id = rec.id().to_owned();
 
-        let telomeric_repeat = *ts.seq.0;
-        write_window_counts(rec, &mut lw, ts, telomeric_repeat, ws, id).unwrap();
+        let telomeric_repeat = ts.seq.get_inner().clone();
+        write_window_counts(rec, &mut lw, ts, &telomeric_repeat, ws, id).unwrap();
 
         // read file contents to new vec
         let mut out = Vec::new();
@@ -217,8 +223,8 @@ mod tests {
         );
 
         let apiales = TelomereSeq {
-            clade: "Apiales",
-            seq: Seq(Box::new(&["AAACCCT"])),
+            clade: "Apiales".to_string(),
+            seq: Seq(vec!["AAACCCT".to_string()]),
             length: 1,
         };
 

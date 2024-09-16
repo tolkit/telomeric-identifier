@@ -1,9 +1,10 @@
 use anyhow::Result;
 use clap::{arg, builder::ArgPredicate, crate_version, value_parser, Arg, Command};
 use std::path::PathBuf;
-use tidk::{clades::CLADES, explore, finder, plot, search, SubCommand};
+use tidk::{build, clades::get_clades, explore, finder, plot, search, SubCommand};
 
 fn main() -> Result<()> {
+    let clades = get_clades()?;
     // command line options
     let matches = Command::new("tidk")
         .version(crate_version!())
@@ -11,6 +12,10 @@ fn main() -> Result<()> {
         .arg_required_else_help(true)
         .author("Max Brown <max.carter-brown@aru.ac.uk>")
         .about("A Telomere Identification Toolkit.")
+        .subcommand(
+            Command::new("build")
+                .about("Build the reference database of telomeric repeat sequences. This is required for the 'find' subcommand.")
+        )
         .subcommand(
             Command::new("find")
                 .about("Supply the name of a clade your organsim belongs to, and this submodule will find all telomeric repeat matches for that clade.")
@@ -30,7 +35,7 @@ fn main() -> Result<()> {
                 .arg(
                     arg!(-c --clade <CLADE> "The clade of organism to identify telomeres in")
                         .required_unless_present("print")
-                        .value_parser(CLADES.to_owned())
+                        .value_parser(clades)
                 )
                 .arg(
                     arg!(-o --output <OUTPUT> "Output filename for the TSVs (without extension)")
@@ -186,6 +191,9 @@ fn main() -> Result<()> {
         }
         Some(("plot", matches)) => {
             plot::plot(matches)?;
+        }
+        Some(("build", _)) => {
+            build::fetch_and_save_data()?;
         }
         _ => {
             unreachable!()
