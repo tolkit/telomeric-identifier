@@ -1,7 +1,3 @@
-# Getting clade information
+# tidk database
 
-A small bash & python script is provided here to fetch all of the data from the <a href="https://github.com/tolkit/a-telomeric-repeat-database">telomeric repeat database</a>, do some filtering checks, and automatically place some rust code in the `/src/clades.rs` file.
-
-```bash
-bash update_clades.bash
-```
+A small curated telomeric repeat database is provided here. It can be fetched and built using the latest version of `tidk` (>=0.2.6) using `tidk build`.
