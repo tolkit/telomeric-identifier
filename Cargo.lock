@@ -1796,7 +1796,7 @@ dependencies = [
 
 [[package]]
 name = "tidk"
-version = "0.2.6"
+version = "0.2.62"
 dependencies = [
  "anyhow",
  "base64",
