@@ -1,8 +1,11 @@
 use anyhow::Result;
 use std::fmt::{self, Display};
 use tabled::{
-    object::{Columns, Rows},
-    Disable, Modify, Panel, Table, Tabled, Width,
+    settings::{
+        object::{Columns, Rows},
+        Disable, Modify, Panel, Width,
+    },
+    Table, Tabled,
 };
 
 use crate::build::{get_database_path, TelomereRepeatRow};
@@ -146,12 +149,12 @@ pub fn print_table() -> Result<()> {
         "{}",
         Table::new(&clade_vec)
             .with(
-                Modify::new(Rows::new(1..clade_vec.len() - 1)).with(Width::wrap(30).keep_words())
+                Modify::new(Rows::new(1..clade_vec.len() - 1)).with(Width::wrap(30).keep_words(true))
             )
             .with(Disable::column(Columns::new(2..3)))
             .with(Panel::footer(
                 "This table is created from a curated database of repeats. This database can be found in its raw form here: https://github.com/tolkit/telomeric-identifier/tree/main/clades/curated.csv"
-            )).with(Width::wrap(60).keep_words())
+            )).with(Width::wrap(60).keep_words(true))
     );
 
     Ok(())
