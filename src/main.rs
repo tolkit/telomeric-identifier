@@ -4,7 +4,6 @@ use std::path::PathBuf;
 use tidk::{build, clades::get_clades, explore, finder, plot, search, SubCommand};
 
 fn main() -> Result<()> {
-    let clades = get_clades()?;
     // command line options
     let matches = Command::new("tidk")
         .version(crate_version!())
@@ -35,7 +34,10 @@ fn main() -> Result<()> {
                 .arg(
                     arg!(-c --clade <CLADE> "The clade of organism to identify telomeres in")
                         .required_unless_present("print")
-                        .value_parser(clades)
+                        .value_parser(get_clades().unwrap_or_else(|_| -> Vec<_> {
+                            eprintln!("Warning! No clades found in the database. Run 'tidk build' to fetch the latest data.\n");
+                            vec![]
+                        }))
                 )
                 .arg(
                     arg!(-o --output <OUTPUT> "Output filename for the TSVs (without extension)")

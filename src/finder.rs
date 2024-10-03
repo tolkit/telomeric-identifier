@@ -29,8 +29,6 @@ pub fn finder(matches: &clap::ArgMatches, sc: SubCommand) -> Result<()> {
         .expect("errored by clap")
         .clone();
 
-    // FIXME: we want to make a function which will read the database from a file
-    // and then return the appropriate TelomereSeq.
     let clade_info = clades::return_telomere_sequence(clade)?;
 
     if clade_info.length == 1 {
