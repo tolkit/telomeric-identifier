@@ -141,11 +141,8 @@ tidk plot -t finder/Xes_telomeric_repeat_windows.tsv -o ilXes -h 120 -w 800
 
 If you use this software please cite:
 
-```
 Max R Brown, Pablo Gonzalez de La Rosa, Mark Blaxter, tidk: a toolkit to rapidly identify telomeric repeats from genomic datasets, Bioinformatics, 2025;, btaf049, https://doi.org/10.1093/bioinformatics/btaf049
-```
 
-Until such a time as an actual paper comes out!
 
 ## Cited by:
 
