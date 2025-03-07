@@ -32,7 +32,7 @@ pub fn search(matches: &clap::ArgMatches, sc: SubCommand) -> Result<()> {
         .get_one::<PathBuf>("dir")
         .expect("defaulted by clap");
     let output = matches
-        .get_one::<String>("output")
+        .get_one::<PathBuf>("output")
         .expect("errored by clap");
 
     // create directory for output
@@ -42,7 +42,7 @@ pub fn search(matches: &clap::ArgMatches, sc: SubCommand) -> Result<()> {
     let file_name = format!(
         "{}/{}{}{}",
         outdir.display(),
-        output,
+        output.display(),
         "_telomeric_repeat_windows.",
         extension
     );

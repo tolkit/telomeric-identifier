@@ -126,6 +126,7 @@ fn main() -> Result<()> {
                 )
                 .arg(
                     arg!(-o --output <OUTPUT> "Output filename for the TSVs (without extension)")
+                        .value_parser(value_parser!(PathBuf))
                         .required(true)
                 )
                 .arg(
