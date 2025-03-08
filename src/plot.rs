@@ -12,7 +12,7 @@ const MARGIN: i32 = 40;
 pub fn plot(matches: &clap::ArgMatches) -> Result<()> {
     // parse the command line options
     let tsv = matches.get_one::<PathBuf>("tsv").expect("errored by clap");
-    // a bug here for manual input of chromosome cut-off which I can't figure out right now.
+    // FIXME: a bug here for manual input of chromosome cut-off which I can't figure out right now.
     let chromosome_cutoff = 0;
     let height_subplot = matches.get_one::<i32>("height").expect("defualted by clap");
     let width = matches.get_one::<i32>("width").expect("defaulted by clap");
@@ -276,6 +276,12 @@ fn generate_plot_data(
         if it == file_length - 1 {
             // there may not be a path element
             // so explicitly make a blank if there is not.
+            // Issue #25
+            y_max = parsed_tsv[it].forward_repeat_number + parsed_tsv[it].reverse_repeat_number;
+            path_vec.push((
+                parsed_tsv[it].window,
+                parsed_tsv[it].forward_repeat_number + parsed_tsv[it].reverse_repeat_number,
+            ));
             let path_element = match make_path_element(
                 path_vec.clone(),
                 path_vec.clone().len(),
