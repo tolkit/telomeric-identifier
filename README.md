@@ -144,7 +144,12 @@ If you use this software please cite:
 Max R Brown, Pablo Gonzalez de La Rosa, Mark Blaxter, tidk: a toolkit to rapidly identify telomeric repeats from genomic datasets, Bioinformatics, 2025;, btaf049, https://doi.org/10.1093/bioinformatics/btaf049
 
 
-## Cited by:
+## [Cited by](https://scholar.google.com/scholar?cites=2410970761109098762&as_sdt=2005&sciodt=0,5&hl=en):
+- Schell, Tilman, Carola Greve, and Lars Podsiadlowski. "Establishing genome sequencing and assembly for non-model and emerging model organisms: a brief guide." Frontiers in Zoology 22.1 (2025): 7.
+- Kon, Tetsuo, et al. "Chromosome-level genome assembly of the doctor fish (Garra rufa)." Scientific Data 12.1 (2025): 1-14.
+- Ryan, Kara, et al. "New Genome Assemblies for Poeciliidae: A Foundation for Adaptation Studies." Genome Biology and Evolution 17.6 (2025): evaf111.
+- de Mattos, Jacqueline S., et al. "The first chromosome-scale genome assembly of a microcyclic rust, Puccinia silphii." BMC genomics 26.1 (2025): 390.
+- Heaven, Thomas, et al. "Chromosome-level Assemblies of Three Candidatus Liberibacter solanacearum Vectors: Dyspersa apicalis (Förster, 1848), Dyspersa pallida (Burckhardt, 1986), and Trioza urticae (Linnaeus, 1758)(Hemiptera: Psylloidea)." Genome Biology and Evolution 17.6 (2025): evaf116.
 - Kurbessoian, Tania, et al. "In host evolution of Exophiala dermatitidis in cystic fibrosis lung micro-environment." **G3**  (2023) 13(8):jkad126. doi: [10.1093/g3journal/jkad126](https://doi.org/10.1093/g3journal/jkad126)
 - Yin, Denghua, et al. "Gapless genome assembly of East Asian finless porpoise." **Scientific Data** 9.1 (2022): 765.
 - Leonard, Guy, et al. "A genome sequence assembly of the phototactic and optogenetic model fungus Blastocladiella emersonii reveals a diversified nucleotide-cyclase repertoire." **Genome Biology and Evolution** 14.12 (2022): evac157.
