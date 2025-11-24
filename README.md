@@ -21,9 +21,9 @@ The easiest way to install is through conda:
 conda install -c bioconda tidk
 ```
 
-Otherwise...
+Otherwise please see the releases page here. It supports all major platforms.
 
-As with other Rust projects, you will have to complile yourself. <a href="https://www.rust-lang.org/tools/install">Download rust</a>, clone this repo, `cd` into it, and then run:
+If you really want to, you can complile yourself. <a href="https://www.rust-lang.org/tools/install">Download rust</a>, clone this repo, `cd` into it, and then run:
 
 `cargo install --path=.`
 
@@ -39,7 +39,7 @@ Before using `tidk find`, you will need to fetch the data using `tidk build`. Yo
 
 ### Explore 
 
-`tidk explore` will attempt to find the simple telomeric repeat unit in the genome provided. It will report this repeat in its canonical form (e.g. TTAGG -> AACCT). Unlike previous versions, only a simple TSV is printed to STDOUT. Use the `distance` parameter to search only in a proportion of the chromosome arms. The default is 1% of the length of the chromosome either side, but feel free to change this. In particular with raw reads (PacBio), I'd recommend setting the distance flag to 0.5 (`--distance 0.5` or `--distance=0.5`), to process the full length of each read.
+`tidk explore` will attempt to find the simple telomeric repeat unit in the genome provided. It will report this repeat in its canonical form (e.g. TTAGG -> AACCT). A simple TSV is printed to STDOUT. Use the `distance` parameter to search only in a proportion of the chromosome arms. The default is 1% of the length of the chromosome either side, but feel free to change this. In particular with raw reads (PacBio), I'd recommend setting the distance flag to 0.5 (`--distance 0.5` or `--distance=0.5`), to process the full length of each read.
 
 For example:
 `tidk explore --minimum 5 --maximum 12 fastas/iyBomHort1_1.20210303.curated_primary.fa > out.tsv` searches the genome for repeats from length 5 to length 12 sequentially on the <a href="https://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/905/332/935/GCA_905332935.1_iyBomHort1.1/"><i>Bombus hortorum</i> genome</a>.
@@ -79,7 +79,7 @@ Arguments:
 
 Options:
   -w, --window [<WINDOW>]  Window size to calculate telomeric repeat counts in [default: 10000]
-  -c, --clade <CLADE>      The clade of organism to identify telomeres in [possible values: Accipitriformes, Actiniaria, Anura, Apiales, Aplousobranchia, Asterales, Buxales, Caprimulgiformes, Carangiformes, Carcharhiniformes, Cardiida, Carnivora, Caryophyllales, Cheilostomatida, Chiroptera, Chlamydomonadales, Coleoptera, Crassiclitellata, Cypriniformes, Eucoccidiorida, Fabales, Fagales, Forcipulatida, Hemiptera, Heteronemertea, Hirudinida, Hymenoptera, Hypnales, Labriformes, Lamiales, Lepidoptera, Malpighiales, Myrtales, Odonata, Orthoptera, Pectinida, Perciformes, Phlebobranchia, Phyllodocida, Plecoptera, Pleuronectiformes, Poales, Rodentia, Rosales, Salmoniformes, Sapindales, Solanales, Symphypleona, Syngnathiformes, Trichoptera, Trochida, Venerida]
+  -c, --clade <CLADE>      The clade of organism to identify telomeres in [possible values: Crassiclitellata, Hirudinida, Phyllodocida, Eucoccidiorida, Coleoptera, Hemiptera, Hymenoptera, Lepidoptera, Odonata, Orthoptera, Plecoptera, Symphypleona, Trichoptera, Cheilostomatida, Chlamydomonadales, Accipitriformes, Anura, Aplousobranchia, Caprimulgiformes, Carangiformes, Carcharhiniformes, Carnivora, Chiroptera, Cypriniformes, Labriformes, Perciformes, Phlebobranchia, Pleuronectiformes, Rodentia, Salmoniformes, Syngnathiformes, Actiniaria, Forcipulatida, Cardiida, Pectinida, Trochida, Venerida, Heteronemertea, Apiales, Asterales, Buxales, Caryophyllales, Fabales, Fagales, Hypnales, Lamiales, Malpighiales, Myrtales, Poales, Rosales, Sapindales, Solanales]
   -o, --output <OUTPUT>    Output filename for the TSVs (without extension)
   -d, --dir <DIR>          Output directory to write files to
   -p, --print              Print a table of clades, along with their telomeric sequences
@@ -121,12 +121,14 @@ SVG plot of TSV generated from tidk search.
 Usage: tidk plot [OPTIONS] --tsv <TSV>
 
 Options:
-  -t, --tsv <TSV>          The input TSV file
-      --height [<HEIGHT>]  The height of subplots (px). [default: 200]
-  -w, --width [<WIDTH>]    The width of plot (px) [default: 1000]
-  -o, --output [<OUTPUT>]  Output filename for the SVG (without extension) [default: tidk-plot]
-  -h, --help               Print help
-  -V, --version            Print version
+  -t, --tsv <TSV>                     The input TSV file
+      --height [<HEIGHT>]             The height of subplots (px). [default: 200]
+  -w, --width [<WIDTH>]               The width of plot (px) [default: 1000]
+  -o, --output [<OUTPUT>]             Output filename for the SVG (without extension) [default: tidk-plot]
+      --fontsize [<FONT_SIZE>]        The font size of the axis labels in the plot [default: 12]
+      --strokewidth [<STROKE_WIDTH>]  The stroke width of the line graph in the plot [default: 2]
+  -h, --help                          Print help
+  -V, --version                       Print version
 ```
 
 As an example on the ol' Square Spot Rustic <i>Xestia xanthographa</i>:
@@ -145,6 +147,7 @@ Max R Brown, Pablo Gonzalez de La Rosa, Mark Blaxter, tidk: a toolkit to rapidly
 
 
 ## [Cited by](https://scholar.google.com/scholar?cites=2410970761109098762&as_sdt=2005&sciodt=0,5&hl=en):
+
 - Schell, Tilman, Carola Greve, and Lars Podsiadlowski. "Establishing genome sequencing and assembly for non-model and emerging model organisms: a brief guide." Frontiers in Zoology 22.1 (2025): 7.
 - Kon, Tetsuo, et al. "Chromosome-level genome assembly of the doctor fish (Garra rufa)." Scientific Data 12.1 (2025): 1-14.
 - Ryan, Kara, et al. "New Genome Assemblies for Poeciliidae: A Foundation for Adaptation Studies." Genome Biology and Evolution 17.6 (2025): evaf111.
