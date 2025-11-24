@@ -1,6 +1,5 @@
-use crate::{clades, utils, SubCommand};
+use crate::{clades, open_fasta_reader, utils, SubCommand};
 use anyhow::{Context, Result};
-use bio::io::fasta;
 use std::fs::{create_dir_all, File};
 use std::io::LineWriter;
 use std::io::Write;
@@ -22,7 +21,7 @@ pub fn finder(matches: &clap::ArgMatches, sc: SubCommand) -> Result<()> {
         .get_one::<PathBuf>("fasta")
         .expect("errored by clap")
         .clone();
-    let reader = fasta::Reader::from_file(input_fasta)?;
+    let reader = open_fasta_reader(input_fasta)?;
 
     let clade = matches
         .get_one::<String>("clade")

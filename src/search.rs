@@ -1,6 +1,5 @@
-use crate::{utils, SubCommand};
+use crate::{open_fasta_reader, utils, SubCommand};
 use anyhow::Result;
-use bio::io::fasta;
 use std::fs::{create_dir_all, File};
 use std::io::LineWriter;
 use std::io::Write;
@@ -12,7 +11,7 @@ pub fn search(matches: &clap::ArgMatches, sc: SubCommand) -> Result<()> {
     let input_fasta = matches
         .get_one::<PathBuf>("fasta")
         .expect("errored by clap");
-    let reader = fasta::Reader::from_file(input_fasta)?;
+    let reader = open_fasta_reader(input_fasta)?;
 
     let telomeric_repeat = matches
         .get_one::<String>("string")

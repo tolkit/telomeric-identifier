@@ -1,7 +1,13 @@
 use anyhow::Result;
+use bio::io::fasta;
 use chrono::Local;
 use clap::crate_version;
-use std::{io::Write, path::PathBuf};
+use flate2::read::MultiGzDecoder;
+use std::{
+    fs::File,
+    io::{BufRead, BufReader, Write},
+    path::{Path, PathBuf},
+};
 
 /// For building the database
 pub mod build;
@@ -19,6 +25,28 @@ pub mod plot;
 pub mod search;
 /// Module for utilities.
 pub mod utils;
+
+/// Open a FASTA file that may be plain or gzipped.
+/// Returns a `bio::io::fasta::Reader` whose underlying reader is `Send`,
+/// so you can still use `.records().par_bridge()`.
+pub fn open_fasta_reader<P: AsRef<Path>>(
+    path: P,
+) -> Result<fasta::Reader<Box<dyn BufRead + Send>>> {
+    let path = path.as_ref();
+    let file = File::open(path)?;
+
+    // Decide whether to decompress based on extension.
+    // You could also sniff the magic bytes 0x1f, 0x8b if you want.
+    let boxed_reader: Box<dyn BufRead + Send> = match path.extension().and_then(|e| e.to_str()) {
+        Some("gz") => {
+            let gz = MultiGzDecoder::new(file);
+            Box::new(BufReader::new(gz))
+        }
+        _ => Box::new(BufReader::new(file)),
+    };
+
+    Ok(fasta::Reader::from_bufread(boxed_reader))
+}
 
 /// Three possible subcommands.
 pub enum SubCommand {

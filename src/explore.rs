@@ -1,7 +1,6 @@
-use crate::{utils, SubCommand};
+use crate::{open_fasta_reader, utils, SubCommand};
 use anyhow::bail;
 use anyhow::Result;
-use bio::io::fasta;
 use itertools::Itertools;
 use rayon::prelude::*;
 use std::collections::BTreeMap;
@@ -53,7 +52,7 @@ pub fn explore(matches: &clap::ArgMatches, sc: SubCommand) -> Result<()> {
             "[+]\tExploring genome for potential telomeric repeats of length: {}",
             length
         );
-        let reader = fasta::Reader::from_file(input_fasta)?;
+        let reader = open_fasta_reader(input_fasta)?;
 
         // try parallelising
         let (sender, receiver) = channel();
@@ -95,7 +94,7 @@ pub fn explore(matches: &clap::ArgMatches, sc: SubCommand) -> Result<()> {
 
             // have to call reader in the loop, as otherwise `reader` doesn't live long enough.
             // I expect it's not an expensive call anyway.
-            let reader = fasta::Reader::from_file(input_fasta)?;
+            let reader = open_fasta_reader(input_fasta)?;
 
             // try parallelising
             let (sender, receiver) = channel();
