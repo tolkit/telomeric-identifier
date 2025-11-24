@@ -34,10 +34,16 @@ impl Seq {
     }
 }
 
+impl Default for Seq {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Display for Seq {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let inner = self.0.join(", ");
-        write!(f, "{}", inner)
+        write!(f, "{inner}")
     }
 }
 
@@ -103,7 +109,7 @@ pub fn get_clades() -> Result<Vec<String>> {
 
     // remove duplicates and empty strings
     out.dedup();
-    out.retain(|e| e != "");
+    out.retain(|e| !e.is_empty());
 
     Ok(out)
 }

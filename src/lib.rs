@@ -109,9 +109,11 @@ Date: {}
                     let log_file = std::fs::File::create(&log_file_name)?;
                     let mut log_file = std::io::LineWriter::new(log_file);
 
-                    writeln!(log_file, "{}", log_string)?;
+                    writeln!(log_file, "{log_string}")?;
 
-                    Ok(eprintln!("[+]\tLog file written to: {}", log_file_name))
+                    eprintln!("[+]\tLog file written to: {log_file_name}");
+
+                    Ok(())
                 }
                 SubCommand::Explore => {
                     let input_fasta = matches
@@ -172,9 +174,11 @@ Date: {}
                     let log_file = std::fs::File::create(&log_file_name)?;
                     let mut log_file = std::io::LineWriter::new(log_file);
 
-                    writeln!(log_file, "{}", log_string)?;
+                    writeln!(log_file, "{log_string}")?;
 
-                    Ok(eprintln!("[+]\tLog file written to: {}", log_file_name))
+                    eprintln!("[+]\tLog file written to: {log_file_name}");
+
+                    Ok(())
                 }
                 SubCommand::Search => {
                     let input_fasta = matches
@@ -225,9 +229,11 @@ Date: {}
                     let log_file = std::fs::File::create(&log_file_name)?;
                     let mut log_file = std::io::LineWriter::new(log_file);
 
-                    writeln!(log_file, "{}", log_string)?;
+                    writeln!(log_file, "{log_string}")?;
 
-                    Ok(eprintln!("[+]\tLog file written to: {}", log_file_name))
+                    eprintln!("[+]\tLog file written to: {log_file_name}");
+
+                    Ok(())
                 }
             }
         } else {

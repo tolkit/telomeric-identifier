@@ -19,10 +19,7 @@ pub fn search(matches: &clap::ArgMatches, sc: SubCommand) -> Result<()> {
     let extension = matches
         .get_one::<String>("extension")
         .expect("defaulted by clap");
-    eprintln!(
-        "[+]\tSearching genome for telomeric repeat: {}",
-        telomeric_repeat
-    );
+    eprintln!("[+]\tSearching genome for telomeric repeat: {telomeric_repeat}");
 
     let window_size = *matches
         .get_one::<usize>("window")
@@ -71,7 +68,7 @@ pub fn search(matches: &clap::ArgMatches, sc: SubCommand) -> Result<()> {
             extension,
         )?;
 
-        eprintln!("[+]\tChromosome {} processed", id);
+        eprintln!("[+]\tChromosome {id} processed");
     }
     eprintln!("[+]\tFinished searching genome.");
 
@@ -135,8 +132,7 @@ fn write_window_counts<T: std::io::Write>(
         if extension == "tsv" {
             writeln!(
                 file,
-                "{}\t{}\t{}\t{}\t{}",
-                id, end, forward_repeat_number, reverse_repeat_number, forward_telomeric_seq
+                "{id}\t{end}\t{forward_repeat_number}\t{reverse_repeat_number}\t{forward_telomeric_seq}"
             )?;
         } else {
             // for bedgraph only four columns, and sum the forward & reverse for convenience

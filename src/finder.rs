@@ -47,8 +47,7 @@ pub fn finder(matches: &clap::ArgMatches, sc: SubCommand) -> Result<()> {
             eprintln!(
                 "[+]\t\t{}",
                 clade_info.seq.get(telomeric_repeat).context(format!(
-                    "Could not get the {} element of `seq`.",
-                    telomeric_repeat
+                    "Could not get the {telomeric_repeat} element of `seq`."
                 ))?
             );
         }
@@ -97,7 +96,7 @@ pub fn finder(matches: &clap::ArgMatches, sc: SubCommand) -> Result<()> {
             id.clone(),
         )?;
 
-        eprintln!("[+]\tChromosome {} processed", id);
+        eprintln!("[+]\tChromosome {id} processed");
     }
     eprintln!("[+]\tFinished searching genome.");
 
@@ -113,7 +112,7 @@ fn write_window_counts<T: std::io::Write>(
     sequence: bio::io::fasta::Record,
     file: &mut LineWriter<T>,
     clade_info: clades::TelomereSeq,
-    telomeric_repeat: &Vec<String>,
+    telomeric_repeat: &[String],
     window_size: usize,
     id: String,
 ) -> Result<()> {
@@ -131,10 +130,9 @@ fn write_window_counts<T: std::io::Write>(
             telomeric_repeat
                 .get(telomeric_repeat_index)
                 .context(format!(
-                    "Could not get the telomeric repeat with index: {}.",
-                    telomeric_repeat_index
+                    "Could not get the telomeric repeat with index: {telomeric_repeat_index}."
                 ))?;
-        let reverse_telomeric_seq = utils::reverse_complement(&forward_telomeric_seq);
+        let reverse_telomeric_seq = utils::reverse_complement(forward_telomeric_seq);
         let current_telomeric_length = forward_telomeric_seq.len();
 
         // create the iterator in each loop iteration isnt costly is it?
@@ -147,7 +145,7 @@ fn write_window_counts<T: std::io::Write>(
             // make window uppercase
             let windows_upper = str::from_utf8(window)?.to_uppercase();
             // for each window, find the motifs in this
-            let forward_motif = utils::find_motifs(&forward_telomeric_seq, &windows_upper);
+            let forward_motif = utils::find_motifs(forward_telomeric_seq, &windows_upper);
             let reverse_motif = utils::find_motifs(&reverse_telomeric_seq, &windows_upper);
 
             // remove overlapping matches
@@ -170,8 +168,7 @@ fn write_window_counts<T: std::io::Write>(
             // write to file
             writeln!(
                 file,
-                "{}\t{}\t{}\t{}\t{}",
-                id, end, forward_repeat_number, reverse_repeat_number, forward_telomeric_seq
+                "{id}\t{end}\t{forward_repeat_number}\t{reverse_repeat_number}\t{forward_telomeric_seq}"
             )?;
         }
         // go to the next telomeric repeat (if there is one)

@@ -99,7 +99,7 @@ fn parse_tsv(path: PathBuf) -> Result<Vec<TelomericRepeatRecord>> {
 /// loops through file to find the lengths of all the
 /// chromosomes (to the nearest window) and reports the
 /// number of elements.
-fn chromosome_number(parsed_tsv: &Vec<TelomericRepeatRecord>, chromosome_cutoff: i32) -> usize {
+fn chromosome_number(parsed_tsv: &[TelomericRepeatRecord], chromosome_cutoff: i32) -> usize {
     // so we can break the loop
     let file_length = parsed_tsv.len();
     // the iteration of the loop

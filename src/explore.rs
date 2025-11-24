@@ -48,10 +48,7 @@ pub fn explore(matches: &clap::ArgMatches, sc: SubCommand) -> Result<()> {
     let mut output_vec: Vec<RepeatPositions> = Vec::new();
     // i.e. if you chose a length, as opposed to a minmum/maximum
     if length > 0 {
-        eprintln!(
-            "[+]\tExploring genome for potential telomeric repeats of length: {}",
-            length
-        );
+        eprintln!("[+]\tExploring genome for potential telomeric repeats of length: {length}");
         let reader = open_fasta_reader(input_fasta)?;
 
         // try parallelising
@@ -86,11 +83,10 @@ pub fn explore(matches: &clap::ArgMatches, sc: SubCommand) -> Result<()> {
     } else {
         // if a range was chosen.
         eprintln!(
-            "[+]\tExploring genome for potential telomeric repeats between lengths {} and {}.",
-            minimum, maximum
+            "[+]\tExploring genome for potential telomeric repeats between lengths {minimum} and {maximum}."
         );
         for length in minimum..maximum + 1 {
-            eprintln!("[+]\t\tFinding telomeric repeat length: {}", length);
+            eprintln!("[+]\t\tFinding telomeric repeat length: {length}");
 
             // have to call reader in the loop, as otherwise `reader` doesn't live long enough.
             // I expect it's not an expensive call anyway.
@@ -141,9 +137,9 @@ pub fn explore(matches: &clap::ArgMatches, sc: SubCommand) -> Result<()> {
     let est = get_telomeric_repeat_estimates(&mut repeat_postitions)?;
 
     // this is not technically a count - it's a count of runs > threshold
-    println!("canonical_repeat_unit\tcount_repeat_runs_gt_{}", threshold);
+    println!("canonical_repeat_unit\tcount_repeat_runs_gt_{threshold}");
     for (cru, count) in est {
-        println!("{}\t{}", cru, count);
+        println!("{cru}\t{count}");
     }
 
     // optional log file
@@ -191,9 +187,8 @@ fn chunk_fasta(
     if sequence_len <= chunk_length {
         if verbose {
             eprintln!(
-                "[-]\tChunk length ({}) greater than filtered sequence length ({}) for {}
-[-]\tConsider increasing proportion of chromosome length covered. Skipping.",
-                chunk_length, sequence_len, id
+                "[-]\tChunk length ({chunk_length}) greater than filtered sequence length ({sequence_len}) for {id}
+[-]\tConsider increasing proportion of chromosome length covered. Skipping."
             );
         }
         return vec![];
@@ -341,8 +336,7 @@ fn calculate_indexes(
     if collection.is_empty() {
         if verbose {
             eprintln!(
-                "[-]\t\tChromosome {}: No consecutive repeats of length {} were identified.",
-                id, chunk_length
+                "[-]\t\tChromosome {id}: No consecutive repeats of length {chunk_length} were identified."
             );
         }
         None
