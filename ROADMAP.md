@@ -18,11 +18,11 @@ work; they feed the methods of the phase 4 comparative paper.
 - [x] Fix: right-arm runs now use whole-record coordinates
 - [ ] Rename the count column (it is now copies of the unit in merged runs, not "runs > threshold"), with a note in the changelog
 - [ ] Optionally report the run length distribution and which k found each unit
-- [ ] Re-run the paper's error simulations (0–10% error) to compare against v0.2.x
+- [x] Re-run the paper's error simulations (0–10% substitution error) against the previous version: the true unit is top in 17/21 conditions (was 7/21). The other 4 (12 kb/30 kb at 5–10%) report nothing, because no exact run reaches the threshold; the old version reported junk there
 
 ## Phase 2: error tolerance and compound repeats
 
-- [ ] Detect tandem runs that tolerate errors (allow ≤ d mismatches per unit, or estimate the period by autocorrelation) so ONT reads and older assemblies at ≥2% error still give the true unit
+- [ ] Detect tandem runs that tolerate errors (allow ≤ d mismatches per unit, or estimate the period by autocorrelation) so ONT reads and older assemblies at ≥2% error still give the true unit. At 5% error, exact runs never reach `-t 100`
 - [ ] Describe compound / HOR telomeres (e.g. *Bombus* AACCT + AACCCG, mixed plant TTTAGGG/TTAGGG): unit composition and alternation per run, not a single winner
 - [ ] Benchmark on simulated reads and known-repeat genomes
 
