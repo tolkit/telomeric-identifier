@@ -110,7 +110,7 @@ pub fn explore(matches: &clap::ArgMatches, sc: SubCommand) -> Result<()> {
     warn_strand_bias(&est);
 
     // copies of the unit in runs longer than the threshold
-    println!("canonical_repeat_unit\tcopies\tcount_as_unit\tcount_as_revcomp");
+    println!("canonical_repeat_unit\tcopies\tcopies_as_unit\tcopies_as_revcomp");
     for e in est {
         let fmt = |c: Option<usize>| c.map_or("NA".to_string(), |c| c.to_string());
         println!(
