@@ -24,6 +24,14 @@ const MISMATCH_PENALTY: i64 = 3;
 // dies, rather than reporting a substring of the true unit.
 const ROTATION_SWITCH_PENALTY: i64 = 8;
 
+// Warn when one of the top units has less than this proportion of its
+// copies on one strand. A telomeric repeat should read both ways round
+// (both chromosome ends of an assembly, both strands across reads), so a
+// strong bias in reads usually means strand-specific basecalling errors.
+const STRAND_BIAS_WARNING: f64 = 0.1;
+// how many of the top units to check for strand bias
+const STRAND_BIAS_TOP_UNITS: usize = 5;
+
 /// The function called from `tidk explore`. It takes the [`clap::Argmatches`]
 /// from the user and also a [`SubCommand`].
 pub fn explore(matches: &clap::ArgMatches, sc: SubCommand) -> Result<()> {
@@ -99,10 +107,21 @@ pub fn explore(matches: &clap::ArgMatches, sc: SubCommand) -> Result<()> {
     // costly calculation if threshold is too low.
     let est = get_telomeric_repeat_estimates(&mut repeat_postitions)?;
 
+    warn_strand_bias(&est);
+
     // this is not technically a count - it's a count of runs > threshold
-    println!("canonical_repeat_unit\tcount_repeat_runs_gt_{threshold}");
-    for (cru, count) in est {
-        println!("{cru}\t{count}");
+    println!(
+        "canonical_repeat_unit\tcount_repeat_runs_gt_{threshold}\tcount_as_unit\tcount_as_revcomp"
+    );
+    for e in est {
+        let fmt = |c: Option<usize>| c.map_or("NA".to_string(), |c| c.to_string());
+        println!(
+            "{}\t{}\t{}\t{}",
+            e.unit,
+            e.count,
+            fmt(e.as_unit),
+            fmt(e.as_revcomp)
+        );
     }
 
     // optional log file
@@ -485,6 +504,58 @@ fn check_telomeric_repeat(sequence: &str) -> bool {
     repeat_period < REPEAT_PERIOD_THRESHOLD
 }
 
+/// Which way round a run reads, relative to its canonical unit.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+enum Orientation {
+    /// A rotation of the unit itself, e.g. CCCTAA for AACCCT.
+    Unit,
+    /// A rotation of the unit's reverse complement, e.g. TTAGGG for AACCCT.
+    Revcomp,
+    /// The unit is a rotation of its own reverse complement (e.g. AATT), so
+    /// there is no way to tell.
+    Either,
+}
+
+/// The orientation of a run's sequence relative to its primitive canonical
+/// unit (see [`utils::primitive_telomere_unit()`]).
+fn orientation(sequence: &str, unit: &str) -> Orientation {
+    if utils::string_rotation(unit, &utils::reverse_complement(unit)) {
+        return Orientation::Either;
+    }
+    // the sequence may be a multimer of the unit, but any unit length
+    // window of it is a rotation of the unit or its reverse complement
+    if utils::string_rotation(&sequence[..unit.len()], unit) {
+        Orientation::Unit
+    } else {
+        Orientation::Revcomp
+    }
+}
+
+/// Runs are grouped by unit, sequence id and orientation.
+type RunKey<'a> = (String, &'a str, Orientation);
+
+/// A candidate telomeric repeat unit and how many copies of it were found.
+#[derive(Debug, PartialEq, Eq)]
+struct UnitEstimate {
+    unit: String,
+    count: usize,
+    /// Copies reading as the unit, None if orientation can't be told.
+    as_unit: Option<usize>,
+    /// Copies reading as its reverse complement, None if orientation can't be told.
+    as_revcomp: Option<usize>,
+}
+
+impl UnitEstimate {
+    /// The proportion of copies on the less common strand.
+    fn minor_strand_proportion(&self) -> Option<f64> {
+        let (u, r) = (self.as_unit?, self.as_revcomp?);
+        if u + r == 0 {
+            return None;
+        }
+        Some(u.min(r) as f64 / (u + r) as f64)
+    }
+}
+
 /// Takes the final aggregation of potential telomeric repeats across
 /// chromosomes and also potentially across different lengths and tries
 /// to find the most likely telomeric repeat.
@@ -494,34 +565,66 @@ fn check_telomeric_repeat(sequence: &str) -> bool {
 /// and exact multimers (e.g. AACCTAACCT) of a repeat all count towards the
 /// same unit. Runs of the same unit on the same sequence are then merged where
 /// they overlap, so a telomere found at several kmer lengths is only counted
-/// once. The count is the number of copies of the unit in the merged runs.
+/// once. The count is the number of copies of the unit in the merged runs,
+/// also split by which way round the runs read (see [`Orientation`]).
 fn get_telomeric_repeat_estimates(
     telomeric_repeats: &mut RepeatPositions,
-) -> Result<Vec<(String, i32)>> {
-    // (unit, sequence id) -> run intervals
-    let mut runs: HashMap<(String, &str), Vec<(usize, usize)>> = HashMap::new();
+) -> Result<Vec<UnitEstimate>> {
+    // (unit, sequence id, orientation) -> run intervals. A stretch of sequence
+    // only reads one way round, so splitting on orientation never splits a
+    // telomere found at several kmer lengths.
+    let mut runs: HashMap<RunKey, Vec<(usize, usize)>> = HashMap::new();
     for el in &telomeric_repeats.0 {
         let unit = utils::primitive_telomere_unit(&el.sequence);
-        runs.entry((unit, el.id.as_str()))
+        let orientation = orientation(&el.sequence, &unit);
+        runs.entry((unit, el.id.as_str(), orientation))
             .or_default()
             .push((el.start, el.end));
     }
 
-    let mut map: HashMap<String, usize> = HashMap::new();
-    for ((unit, _), mut intervals) in runs {
-        let covered = merged_length(&mut intervals);
-        *map.entry(unit.clone()).or_insert(0) += covered / unit.len();
+    let mut map: HashMap<String, (usize, usize, usize)> = HashMap::new();
+    for ((unit, _, orientation), mut intervals) in runs {
+        let copies = merged_length(&mut intervals) / unit.len();
+        let counts = map.entry(unit).or_insert((0, 0, 0));
+        match orientation {
+            Orientation::Unit => counts.0 += copies,
+            Orientation::Revcomp => counts.1 += copies,
+            Orientation::Either => counts.2 += copies,
+        }
     }
 
-    let mut count_vec: Vec<_> = map
+    let mut estimates: Vec<_> = map
         .into_iter()
-        .map(|(unit, count)| (unit, count as i32))
+        .map(|(unit, (as_unit, as_revcomp, either))| {
+            let palindromic = either > 0;
+            UnitEstimate {
+                unit,
+                count: as_unit + as_revcomp + either,
+                as_unit: (!palindromic).then_some(as_unit),
+                as_revcomp: (!palindromic).then_some(as_revcomp),
+            }
+        })
         .collect();
     // ties broken on the unit so output is deterministic
-    count_vec.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
-    filter_count_vec(&mut count_vec)?;
+    estimates.sort_by(|a, b| b.count.cmp(&a.count).then_with(|| a.unit.cmp(&b.unit)));
+    filter_count_vec(&mut estimates)?;
 
-    Ok(count_vec)
+    Ok(estimates)
+}
+
+/// Print a warning for any of the top units which mostly read one way round.
+fn warn_strand_bias(estimates: &[UnitEstimate]) {
+    for e in estimates.iter().take(STRAND_BIAS_TOP_UNITS) {
+        if let Some(p) = e.minor_strand_proportion() {
+            if p < STRAND_BIAS_WARNING {
+                eprintln!(
+                    "[!]\t{}: only {:.1}% of copies are on the minor strand. In reads this usually means strand-specific basecalling errors: the unit may be an artefact, or a real repeat basecalled badly on one strand.",
+                    e.unit,
+                    p * 100.0
+                );
+            }
+        }
+    }
 }
 
 /// Total length covered by a set of half open intervals,
@@ -569,11 +672,11 @@ fn check_repeats(s: &str) -> usize {
 /// - Monomeric
 /// - Dimeric
 /// - Trimeric
-fn filter_count_vec(v: &mut Vec<(String, i32)>) -> Result<()> {
+fn filter_count_vec(v: &mut Vec<UnitEstimate>) -> Result<()> {
     // monomers
     // not sure I need this.
-    v.retain(|(s, _)| {
-        let repeat_period = check_repeats(s);
+    v.retain(|e| {
+        let repeat_period = check_repeats(&e.unit);
         repeat_period > REPEAT_PERIOD_THRESHOLD
     });
 
@@ -700,6 +803,11 @@ mod tests {
         )
     }
 
+    /// (unit, count) pairs from the estimates
+    fn unit_counts(estimates: Vec<UnitEstimate>) -> Vec<(String, usize)> {
+        estimates.into_iter().map(|e| (e.unit, e.count)).collect()
+    }
+
     fn generate_indexes_left(genome: &str) -> RepeatPositions {
         let chunks = generate_chunks_left(genome);
         calculate_indexes(chunks, CHUNK_LENGTH, false, "test".into(), 0).unwrap()
@@ -730,7 +838,7 @@ mod tests {
     #[test]
     fn test_get_telomeric_repeat_estimates() {
         let mut indices = generate_indexes_left(GENOME_2);
-        let res = get_telomeric_repeat_estimates(&mut indices).unwrap();
+        let res = unit_counts(get_telomeric_repeat_estimates(&mut indices).unwrap());
         // AACCT 0-10 and 20-30, TAAAT (canonical AAATT) 10-20
         assert_eq!(
             res,
@@ -754,7 +862,7 @@ mod tests {
             run("chr1", 0, 70, "TTTAGGG"),
             run("chr1", 1000, 1140, "AGGGTTTAGGGTTT"),
         ]);
-        let res = get_telomeric_repeat_estimates(&mut positions).unwrap();
+        let res = unit_counts(get_telomeric_repeat_estimates(&mut positions).unwrap());
         assert_eq!(res, vec![("AAACCCT".to_string(), 30)]);
     }
 
@@ -767,7 +875,7 @@ mod tests {
             // same coordinates on another sequence are a different telomere
             run("chr2", 0, 500, "TTAGG"),
         ]);
-        let res = get_telomeric_repeat_estimates(&mut positions).unwrap();
+        let res = unit_counts(get_telomeric_repeat_estimates(&mut positions).unwrap());
         assert_eq!(res, vec![("AACCT".to_string(), 200)]);
     }
 
@@ -876,5 +984,46 @@ mod tests {
     fn test_consensus_undoes_rotation() {
         let chunks: Vec<&[u8]> = vec![b"TTAGGG", b"TTAGGG", b"AGGGTT", b"AGGGTT"];
         assert_eq!(consensus(&chunks, &[0, 0, 2, 2]), "TTAGGG");
+    }
+
+    #[test]
+    fn test_orientation() {
+        assert_eq!(orientation("CCCTAA", "AACCCT"), Orientation::Unit);
+        assert_eq!(orientation("TTAGGG", "AACCCT"), Orientation::Revcomp);
+        // multimers, rotated
+        assert_eq!(orientation("CTAACCCTAACC", "AACCCT"), Orientation::Unit);
+        assert_eq!(orientation("GGGTTAGGGTTA", "AACCCT"), Orientation::Revcomp);
+        // AATT is its own reverse complement
+        assert_eq!(orientation("ATTA", "AATT"), Orientation::Either);
+    }
+
+    #[test]
+    fn test_estimates_split_by_strand() {
+        let mut positions = RepeatPositions(vec![
+            // start of chr1, C-rich strand
+            run("chr1", 0, 600, "CCCTAA"),
+            // end of chr1 at two kmer lengths, G-rich strand
+            run("chr1", 10_000, 10_300, "TTAGGG"),
+            run("chr1", 10_000, 10_300, "GGGTTAGGGTTA"),
+        ]);
+        let res = get_telomeric_repeat_estimates(&mut positions).unwrap();
+        assert_eq!(
+            res,
+            vec![UnitEstimate {
+                unit: "AACCCT".into(),
+                count: 150,
+                as_unit: Some(100),
+                as_revcomp: Some(50),
+            }]
+        );
+        assert_eq!(res[0].minor_strand_proportion(), Some(50.0 / 150.0));
+    }
+
+    #[test]
+    fn test_estimates_palindromic_unit_has_no_strand() {
+        let mut positions = RepeatPositions(vec![run("chr1", 0, 400, "AATTAATT")]);
+        let res = get_telomeric_repeat_estimates(&mut positions).unwrap();
+        assert_eq!(res[0].as_unit, None);
+        assert_eq!(res[0].minor_strand_proportion(), None);
     }
 }

@@ -41,6 +41,8 @@ Before using `tidk find`, you will need to fetch the data using `tidk build`. Yo
 
 `tidk explore` will attempt to find the simple telomeric repeat unit in the genome provided. It will report this repeat in its canonical form (e.g. TTAGG -> AACCT). A simple TSV is printed to STDOUT. Use the `distance` parameter to search only in a proportion of the chromosome arms. The default is 1% of the length of the chromosome either side, but feel free to change this. In particular with raw reads (PacBio), I'd recommend setting the distance flag to 0.5 (`--distance 0.5` or `--distance=0.5`), to process the full length of each read.
 
+The output has a row per canonical repeat unit with the number of copies found, split into copies reading as the unit (e.g. `CCCTAA` for `AACCCT`) and copies reading as its reverse complement (`TTAGGG`). A real telomeric repeat reads both ways round, at both ends of a chromosome or across both strands in reads. A strong one-sided bias in reads usually comes from strand-specific basecalling errors (common for telomeres in older ONT data), and `explore` prints a warning for such units among the top five. Units that are a rotation of their own reverse complement have `NA` for both.
+
 Raw reads and noisy assemblies break exact runs of the repeat. Use `--error-tolerant` (`-e`) to let runs continue through substitutions and indels; in simulations it recovers the true repeat unit at up to 10% error (see `benchmarks/accuracy`).
 
 For example:
