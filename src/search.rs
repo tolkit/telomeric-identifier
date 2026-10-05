@@ -112,9 +112,9 @@ fn write_window_counts<T: std::io::Write>(
         // remove overlapping matches
         // not sure this is necessary, but thought it might be...
         let forward_motif_noverlap =
-            utils::remove_overlapping_indexes(forward_motif, telomeric_length);
+            utils::remove_overlapping_indexes(forward_motif.indexes, telomeric_length);
         let reverse_motif_noverlap =
-            utils::remove_overlapping_indexes(reverse_motif, telomeric_length);
+            utils::remove_overlapping_indexes(reverse_motif.indexes, telomeric_length);
 
         // the number of matches for forward/reverse
         let forward_repeat_number = forward_motif_noverlap.len();

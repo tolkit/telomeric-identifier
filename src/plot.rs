@@ -138,7 +138,7 @@ fn scale_y(y: f64, a: f64, b: f64, min: f64, max: f64) -> f64 {
 /// This is also where the paths are scaled to
 /// the plot width and subplot height.
 fn make_path_element(
-    path_vec: Vec<(i32, i32)>,
+    path_vec: &[(i32, i32)],
     x_max: usize,
     y_max: usize,
     height: i32,
@@ -254,105 +254,101 @@ pub struct PlotData {
     pub sequence: String,
 }
 
-/// Loop through the parsed TSV file and
-/// calculate SVG path elements on the fly
-/// along with other [`PlotData`] elements.
+fn flush_group(
+    plot_data: &mut Vec<PlotData>,
+    cur_id: &mut Option<String>,
+    cur_seq: &mut Option<String>,
+    cur_max_window: &mut usize,
+    path_vec: &mut Vec<(i32, i32)>,
+    y_max: &mut i32,
+    height: i32,
+    width: i32,
+    height_per_plot: i32,
+) {
+    if let (Some(id), Some(seq)) = (cur_id.take(), cur_seq.take()) {
+        let path_element = match make_path_element(
+            path_vec, // keep clone if make_path_element takes ownership
+            path_vec.len(),
+            (*y_max) as usize,
+            height,
+            width,
+            height_per_plot,
+        ) {
+            Some(x) => x,
+            None => " ".to_owned(),
+        };
+
+        plot_data.push(PlotData {
+            id,
+            path: path_element,
+            max: *cur_max_window,
+            sequence: seq,
+        });
+
+        // clear the path vec and reset the max values for the next chromosome
+        path_vec.clear();
+        *y_max = 0;
+        *cur_max_window = 0;
+    }
+}
+
 fn generate_plot_data(
     parsed_tsv: Vec<TelomericRepeatRecord>,
     height: i32,
     width: i32,
     height_per_plot: i32,
 ) -> Vec<PlotData> {
-    // so we can break the loop
-    let file_length = parsed_tsv.len();
-    // the iteration of the loop
-    let mut it = 0usize;
-    // a mutable vector to calculate svg path attribute
-    let mut path_vec = Vec::new();
     let mut plot_data = Vec::new();
-    let mut y_max = 0;
 
-    loop {
-        if it == file_length - 1 {
-            // there may not be a path element
-            // so explicitly make a blank if there is not.
-            // Issue #25
-            y_max = parsed_tsv[it].forward_repeat_number + parsed_tsv[it].reverse_repeat_number;
-            path_vec.push((
-                parsed_tsv[it].window,
-                parsed_tsv[it].forward_repeat_number + parsed_tsv[it].reverse_repeat_number,
-            ));
-            let path_element = match make_path_element(
-                path_vec.clone(),
-                path_vec.clone().len(),
-                y_max as usize,
+    let mut cur_id: Option<String> = None;
+    let mut cur_seq: Option<String> = None;
+    let mut cur_max_window: usize = 0;
+    let mut path_vec: Vec<(i32, i32)> = Vec::new();
+    let mut y_max: i32 = 0;
+
+    for rec in parsed_tsv.into_iter() {
+        let id_changed = cur_id.as_ref().map(|id| id != &rec.id).unwrap_or(false);
+
+        if id_changed {
+            flush_group(
+                &mut plot_data,
+                &mut cur_id,
+                &mut cur_seq,
+                &mut cur_max_window,
+                &mut path_vec,
+                &mut y_max,
                 height,
                 width,
                 height_per_plot,
-            ) {
-                Some(x) => x,
-                None => " ".to_owned(),
-            };
-
-            plot_data.push(PlotData {
-                id: parsed_tsv[it].id.clone(),
-                path: path_element,
-                max: parsed_tsv[it].window as usize,
-                sequence: parsed_tsv[it].telomeric_repeat.clone(),
-            });
-            break;
+            );
         }
 
-        if parsed_tsv[it].id == parsed_tsv[it + 1].id {
-            // calculate y max
-            if y_max <= parsed_tsv[it].forward_repeat_number + parsed_tsv[it].reverse_repeat_number
-            {
-                y_max = parsed_tsv[it].forward_repeat_number + parsed_tsv[it].reverse_repeat_number;
-            }
-            // window (i.e x)
-            // forward + reverse counts
-            path_vec.push((
-                parsed_tsv[it].window,
-                parsed_tsv[it].forward_repeat_number + parsed_tsv[it].reverse_repeat_number,
-            ));
-            it += 1;
-        } else {
-            // want to calculate y_max and...
-            if y_max <= parsed_tsv[it].forward_repeat_number + parsed_tsv[it].reverse_repeat_number
-            {
-                y_max = parsed_tsv[it].forward_repeat_number + parsed_tsv[it].reverse_repeat_number;
-            }
-            // the path vector for the last element (seems important for things which occur at the
-            // ends of chromosomes right..? DOH)
-            path_vec.push((
-                parsed_tsv[it].window,
-                parsed_tsv[it].forward_repeat_number + parsed_tsv[it].reverse_repeat_number,
-            ));
-            // calculate the svg path element from path_vec here
-            // there may not be a path element
-            // so explicitly make a blank if there is not.
-            let path_element = match make_path_element(
-                path_vec.clone(),
-                path_vec.clone().len(),
-                y_max as usize,
-                height,
-                width,
-                height_per_plot,
-            ) {
-                Some(x) => x,
-                None => " ".to_owned(),
-            };
-
-            plot_data.push(PlotData {
-                id: parsed_tsv[it].id.clone(),
-                path: path_element,
-                max: parsed_tsv[it].window as usize,
-                sequence: parsed_tsv[it].telomeric_repeat.clone(),
-            });
-            path_vec.clear();
-            it += 1;
-            y_max = 0;
+        if cur_id.is_none() {
+            cur_id = Some(rec.id.clone());
         }
+        if cur_seq.is_none() {
+            cur_seq = Some(rec.telomeric_repeat.clone());
+        }
+
+        cur_max_window = cur_max_window.max(rec.window as usize);
+
+        let y = rec.forward_repeat_number + rec.reverse_repeat_number;
+        y_max = y_max.max(y);
+        path_vec.push((rec.window, y));
     }
+
+    // flush last group
+    flush_group(
+        &mut plot_data,
+        &mut cur_id,
+        &mut cur_seq,
+        &mut cur_max_window,
+        &mut path_vec,
+        &mut y_max,
+        height,
+        width,
+        height_per_plot,
+    );
+
     plot_data
 }

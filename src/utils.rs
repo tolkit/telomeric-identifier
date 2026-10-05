@@ -57,26 +57,21 @@ fn switch_base(c: char) -> char {
     }
 }
 
-/// Not sure if this function is necessary, but it looks at the indexes of the motifs
-/// in the genome and removes indexes which occur consecutively less than the pattern
-/// length apart.
-pub fn remove_overlapping_indexes(indexes: Motifs, pattern_length: usize) -> Vec<usize> {
-    let mut indexes = indexes.indexes;
-    let mut index = 0;
-    let mut vec_len;
-
-    loop {
-        vec_len = indexes.len();
-
-        if indexes.is_empty() || index == 0 || index == vec_len - 1 {
-            break;
-        }
-        while indexes[index + 1] < indexes[index] + pattern_length {
-            indexes.remove(index + 1);
-            index += 1;
+pub fn remove_overlapping_indexes(mut idx: Vec<usize>, pattern_len: usize) -> Vec<usize> {
+    if idx.is_empty() {
+        return idx;
+    }
+    idx.sort_unstable();
+    let mut out = Vec::with_capacity(idx.len());
+    let mut last = idx[0];
+    out.push(last);
+    for &x in idx.iter().skip(1) {
+        if x >= last + pattern_len {
+            out.push(x);
+            last = x;
         }
     }
-    indexes
+    out
 }
 
 /// A string rotation algorithm.
@@ -165,6 +160,39 @@ pub fn lex_min(dna_string: &str) -> String {
     strings[0].to_string()
 }
 
+/// Return the smallest exact period of s (bytes).
+/// If no smaller exact period exists, returns s.len().
+pub fn smallest_period_bytes(s: &[u8]) -> usize {
+    let n = s.len();
+    if n == 0 {
+        return 0;
+    }
+
+    for p in 1..=n {
+        if n % p != 0 {
+            continue;
+        }
+        if (0..n).all(|i| s[i] == s[i % p]) {
+            return p;
+        }
+    }
+    n
+}
+
+/// Reduce a putative repeat unit to its primitive unit:
+/// - canonicalise for rotation + reverse-complement (lex_min)
+/// - then reduce to the smallest exact period
+/// - then canonicalise again (so primitive is canonical too)
+pub fn primitive_telomere_unit(s: &str) -> String {
+    let canon = lex_min(s);
+    let p = smallest_period_bytes(canon.as_bytes());
+    if p == 0 {
+        return canon;
+    }
+    let prim = &canon[..p];
+    lex_min(prim)
+}
+
 #[cfg(test)]
 mod tests {
 
@@ -235,5 +263,21 @@ mod tests {
     fn motifs1() {
         let motifs = find_motifs(CANONICAL, HAYSTACK);
         assert_eq!(motifs.indexes, EXPECTED)
+    }
+
+    #[test]
+    fn primitive_unit_decomposes_exact_multiples() {
+        assert_eq!(primitive_telomere_unit("AAACCCTAAACCCT"), "AAACCCT"); // 2×
+        assert_eq!(primitive_telomere_unit("AAACCCTAAACCCTAAACCCT"), "AAACCCT");
+        // 3×
+    }
+
+    #[test]
+    fn primitive_unit_does_not_decompose_non_exact() {
+        // Not an exact 7-mer repeat because of the missing 'A'
+        assert_eq!(
+            primitive_telomere_unit("AAACCCTAACCCT"),
+            lex_min("AAACCCTAACCCT")
+        );
     }
 }
