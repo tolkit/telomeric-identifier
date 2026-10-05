@@ -6,7 +6,7 @@
 # e.g.   ./run.bash old=../old/tidk new=../../target/release/tidk
 #
 # Extra explore arguments can follow the binary, e.g.
-#        ./run.bash exact=tidk "tolerant=tidk --error-tolerant"
+#        ./run.bash "exact=tidk --exact" tolerant=tidk
 #
 # ERROR_MODEL=mixed adds indels to the simulated errors (default: substitution,
 # as in the paper).

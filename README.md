@@ -41,9 +41,9 @@ Before using `tidk find`, you will need to fetch the data using `tidk build`. Yo
 
 `tidk explore` will attempt to find the simple telomeric repeat unit in the genome provided. It will report this repeat in its canonical form (e.g. TTAGG -> AACCT). A simple TSV is printed to STDOUT. Use the `distance` parameter to search only in a proportion of the chromosome arms. The default is 1% of the length of the chromosome either side, but feel free to change this. In particular with raw reads (PacBio), I'd recommend setting the distance flag to 0.5 (`--distance 0.5` or `--distance=0.5`), to process the full length of each read.
 
-The output has a row per canonical repeat unit with the number of copies found, split into copies reading as the unit (e.g. `CCCTAA` for `AACCCT`) and copies reading as its reverse complement (`TTAGGG`). A real telomeric repeat reads both ways round, at both ends of a chromosome or across both strands in reads. A strong one-sided bias in reads usually comes from strand-specific basecalling errors (common for telomeres in older ONT data), and `explore` prints a warning for such units among the top five. Units that are a rotation of their own reverse complement have `NA` for both.
+The output has a row per canonical repeat unit with the number of copies found in runs longer than `--threshold` (the `copies` column; before 0.3.0 this was named `count_repeat_runs_gt_<threshold>`), split into copies reading as the unit (e.g. `CCCTAA` for `AACCCT`) and copies reading as its reverse complement (`TTAGGG`). A real telomeric repeat reads both ways round, at both ends of a chromosome or across both strands in reads. A strong one-sided bias in reads usually comes from strand-specific basecalling errors (common for telomeres in older ONT data), and `explore` prints a warning for such units among the top five. Units that are a rotation of their own reverse complement have `NA` for both.
 
-Raw reads and noisy assemblies break exact runs of the repeat. Use `--error-tolerant` (`-e`) to let runs continue through substitutions and indels; in simulations it recovers the true repeat unit at up to 10% error (see `benchmarks/accuracy`).
+Since version 0.3.0, runs of a repeat may contain sequencing errors (substitutions and indels), so raw reads and noisy assemblies still give the true repeat unit. In simulations it is recovered at up to 10% error (see `benchmarks/accuracy`). Use `--exact` for the previous behaviour, where any error breaks a run. `-e`/`--error-tolerant` is still accepted and does nothing.
 
 For example:
 `tidk explore --minimum 5 --maximum 12 fastas/iyBomHort1_1.20210303.curated_primary.fa > out.tsv` searches the genome for repeats from length 5 to length 12 sequentially on the <a href="https://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/905/332/935/GCA_905332935.1_iyBomHort1.1/"><i>Bombus hortorum</i> genome</a>.
@@ -63,7 +63,7 @@ Options:
   -x, --maximum [<MAXIMUM>]      Maximum length of substring [default: 12]
   -t, --threshold [<THRESHOLD>]  Positions of repeats are only reported if they occur sequentially in a greater number than the threshold [default: 100]
       --distance [<DISTANCE>]    The distance from the end of the chromosome as a proportion of chromosome length. Must range from 0-0.5. [default: 0.01]
-  -e, --error-tolerant           Allow sequencing errors (substitutions and indels) within repeat runs. Useful for raw reads or noisy assemblies.
+      --exact                    Only count runs of exactly identical repeats, as before version 0.3.0. By default runs may contain sequencing errors (substitutions and indels).
   -v, --verbose                  Print verbose output.
       --log                      Output a log file.
   -h, --help                     Print help

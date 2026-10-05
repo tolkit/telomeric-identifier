@@ -97,10 +97,16 @@ fn main() -> Result<()> {
                         .default_value("0.01")
                 )
                 .arg(
+                    arg!(--exact "Only count runs of exactly identical repeats, as before version 0.3.0. By default runs may contain sequencing errors (substitutions and indels).")
+                        .action(clap::ArgAction::SetTrue)
+                )
+                .arg(
+                    // the default since 0.3.0, kept so existing scripts still run
                     Arg::new("error-tolerant")
                         .short('e')
                         .long("error-tolerant")
-                        .help("Allow sequencing errors (substitutions and indels) within repeat runs. Useful for raw reads or noisy assemblies.")
+                        .hide(true)
+                        .conflicts_with("exact")
                         .action(clap::ArgAction::SetTrue)
                 )
                 .arg(

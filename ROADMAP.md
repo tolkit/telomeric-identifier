@@ -16,7 +16,7 @@ work; they feed the methods of the phase 4 comparative paper.
 - [x] Merge overlapping runs per sequence, so a telomere found at several k in a `--minimum/--maximum` range is counted once
 - [x] Fix: the first run on each arm started at position 0, which inflated counts and let junk repeats through
 - [x] Fix: right-arm runs now use whole-record coordinates
-- [ ] Rename the count column (it is now copies of the unit in merged runs, not "runs > threshold"), with a note in the changelog
+- [x] Rename the count column to `copies` (0.3.0)
 - [ ] Optionally report the run length distribution and which k found each unit
 - [x] Re-run the paper's error simulations (0–10% substitution error) against the previous version: the true unit is top in 17/21 conditions (was 7/21). The other 4 (12 kb/30 kb at 5–10%) report nothing, because no exact run reaches the threshold; the old version reported junk there
 
@@ -24,7 +24,7 @@ work; they feed the methods of the phase 4 comparative paper.
 
 - [x] Error-tolerant run detection (`explore --error-tolerant`): runs are seeded on exact adjacent chunks, then extended with a scoring rule that tolerates substitutions, with a penalised rotation switch for indels and consensus labelling. True unit is top in 21/21 conditions for both substitution-only and mixed (indel) errors, with ≥95% of copies recovered at 5% error
 - [x] Real-data test (oak dhQueRobu3.1, meadow brown ilManJurt1.1; assemblies plus ~3 Gbp HiFi/ONT subsamples): same top unit as exact on assemblies, at the same speed; 3–50× more telomeric copies from reads; old R9 ONT gives nothing exact, but the tolerant top unit is a basecalling artefact (below)
-- [ ] Decide whether `--error-tolerant` becomes the default (cost: more secondary units from imperfect microsatellites, e.g. ACAG/AAAG)
+- [x] Make error-tolerant runs the default (0.3.0), with `--exact` for the old behaviour; `-e` is kept as a hidden no-op. Cost: more secondary units from imperfect microsatellites, e.g. ACAG/AAAG
 - [x] Report strand balance for each unit (`count_as_unit`/`count_as_revcomp` columns, plus a warning below 10% on the minor strand). On real data, assemblies and HiFi are balanced (32–47% minor strand); every unit in the 2019 meadow brown ONT is 0%. That covers satellites too (ACAG: long arrays only basecalled cleanly on one strand), not just telomeres. Both ONT sets miscall the G-rich telomere strand (meadow brown TTAGG→TTGGG, oak TTTAGGG→AGGG), while the C-rich strand is called correctly. True telomeric units should appear in both orientations across reads, so a strong strand bias would flag basecalling artefacts
 - [ ] Remaining tolerant mode artefacts: small 11-mer units (≤0.6%) at 10% indel error, where both seed copies share an indel
 - [ ] Describe compound / HOR telomeres (e.g. *Bombus* AACCT + AACCCG, mixed plant TTTAGGG/TTAGGG): unit composition and alternation per run, not a single winner

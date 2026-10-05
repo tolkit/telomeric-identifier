@@ -60,9 +60,9 @@ pub fn explore(matches: &clap::ArgMatches, sc: SubCommand) -> Result<()> {
     }
 
     let verbose = matches.get_flag("verbose");
-    let error_tolerant = matches.get_flag("error-tolerant");
-    if error_tolerant {
-        eprintln!("[+]\tAllowing sequencing errors within repeat runs");
+    let error_tolerant = !matches.get_flag("exact");
+    if !error_tolerant {
+        eprintln!("[+]\tOnly counting runs of exactly identical repeats");
     }
 
     // to report the telomeres...
@@ -109,10 +109,8 @@ pub fn explore(matches: &clap::ArgMatches, sc: SubCommand) -> Result<()> {
 
     warn_strand_bias(&est);
 
-    // this is not technically a count - it's a count of runs > threshold
-    println!(
-        "canonical_repeat_unit\tcount_repeat_runs_gt_{threshold}\tcount_as_unit\tcount_as_revcomp"
-    );
+    // copies of the unit in runs longer than the threshold
+    println!("canonical_repeat_unit\tcopies\tcount_as_unit\tcount_as_revcomp");
     for e in est {
         let fmt = |c: Option<usize>| c.map_or("NA".to_string(), |c| c.to_string());
         println!(

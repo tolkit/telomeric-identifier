@@ -11,7 +11,7 @@ cargo build --release
 ```
 
 Pass several `name=binary` pairs to compare versions on the same simulated fastas.
-Extra `explore` flags can follow the binary (`"tolerant=target/release/tidk --error-tolerant"`).
+Extra `explore` flags can follow the binary (`"exact=target/release/tidk --exact"`).
 Set `ERROR_MODEL=mixed` to simulate substitutions, insertions and deletions in equal proportion
 (the default, `substitution`, matches the paper).
 The generator is not seeded, so counts vary slightly between runs.
@@ -30,7 +30,7 @@ The generator is not seeded, so counts vary slightly between runs.
 ### Error-tolerant mode
 
 `results_error_tolerant_substitution.tsv` and `results_error_tolerant_mixed.tsv` compare
-exact runs with `--error-tolerant`.
+exact runs with `--error-tolerant`, which became the default in 0.3.0 (`--exact` gives the old behaviour).
 
 | | substitution | mixed (indels) |
 |---|---|---|
