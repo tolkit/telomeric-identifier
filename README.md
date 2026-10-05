@@ -41,6 +41,8 @@ Before using `tidk find`, you will need to fetch the data using `tidk build`. Yo
 
 `tidk explore` will attempt to find the simple telomeric repeat unit in the genome provided. It will report this repeat in its canonical form (e.g. TTAGG -> AACCT). A simple TSV is printed to STDOUT. Use the `distance` parameter to search only in a proportion of the chromosome arms. The default is 1% of the length of the chromosome either side, but feel free to change this. In particular with raw reads (PacBio), I'd recommend setting the distance flag to 0.5 (`--distance 0.5` or `--distance=0.5`), to process the full length of each read.
 
+Raw reads and noisy assemblies break exact runs of the repeat. Use `--error-tolerant` (`-e`) to let runs continue through substitutions and indels; in simulations it recovers the true repeat unit at up to 10% error (see `benchmarks/accuracy`).
+
 For example:
 `tidk explore --minimum 5 --maximum 12 fastas/iyBomHort1_1.20210303.curated_primary.fa > out.tsv` searches the genome for repeats from length 5 to length 12 sequentially on the <a href="https://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/905/332/935/GCA_905332935.1_iyBomHort1.1/"><i>Bombus hortorum</i> genome</a>.
 
@@ -59,6 +61,7 @@ Options:
   -x, --maximum [<MAXIMUM>]      Maximum length of substring [default: 12]
   -t, --threshold [<THRESHOLD>]  Positions of repeats are only reported if they occur sequentially in a greater number than the threshold [default: 100]
       --distance [<DISTANCE>]    The distance from the end of the chromosome as a proportion of chromosome length. Must range from 0-0.5. [default: 0.01]
+  -e, --error-tolerant           Allow sequencing errors (substitutions and indels) within repeat runs. Useful for raw reads or noisy assemblies.
   -v, --verbose                  Print verbose output.
       --log                      Output a log file.
   -h, --help                     Print help

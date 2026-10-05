@@ -14,6 +14,16 @@ use std::sync::mpsc::channel;
 
 static REPEAT_PERIOD_THRESHOLD: usize = 3;
 
+// Scoring for error tolerant runs. Each base of a chunk that matches the
+// seed scores +1, and each mismatch scores -MISMATCH_PENALTY, so runs extend
+// through error rates below 1 / (1 + MISMATCH_PENALTY) = 25%.
+const MISMATCH_PENALTY: i64 = 3;
+// Cost of matching a different rotation of the seed than the previous chunk,
+// i.e. an indel shifted the frame. A wrong kmer length (e.g. 5 on a 6bp
+// telomere) changes rotation every chunk, so pays this every time and the run
+// dies, rather than reporting a substring of the true unit.
+const ROTATION_SWITCH_PENALTY: i64 = 8;
+
 /// The function called from `tidk explore`. It takes the [`clap::Argmatches`]
 /// from the user and also a [`SubCommand`].
 pub fn explore(matches: &clap::ArgMatches, sc: SubCommand) -> Result<()> {
@@ -42,6 +52,10 @@ pub fn explore(matches: &clap::ArgMatches, sc: SubCommand) -> Result<()> {
     }
 
     let verbose = matches.get_flag("verbose");
+    let error_tolerant = matches.get_flag("error-tolerant");
+    if error_tolerant {
+        eprintln!("[+]\tAllowing sequencing errors within repeat runs");
+    }
 
     // to report the telomeres...
     let mut output_vec: Vec<RepeatPositions> = Vec::new();
@@ -54,6 +68,7 @@ pub fn explore(matches: &clap::ArgMatches, sc: SubCommand) -> Result<()> {
             dist_from_chromosome_end,
             verbose,
             threshold as usize,
+            error_tolerant,
         )?);
     } else {
         // if a range was chosen.
@@ -68,6 +83,7 @@ pub fn explore(matches: &clap::ArgMatches, sc: SubCommand) -> Result<()> {
                 dist_from_chromosome_end,
                 verbose,
                 threshold as usize,
+                error_tolerant,
             )?);
         }
     }
@@ -104,6 +120,7 @@ fn explore_length(
     dist_from_chromosome_end: f64,
     verbose: bool,
     threshold: usize,
+    error_tolerant: bool,
 ) -> Result<Vec<RepeatPositions>> {
     let reader = open_fasta_reader(input_fasta)?;
 
@@ -123,11 +140,14 @@ fn explore_length(
             let offsets = [0, seq_len - sequences[1].len()];
 
             for (sequence, offset) in sequences.into_iter().zip(offsets) {
-                let indexes = chunk_fasta(sequence, length, verbose, id.clone());
-
-                if let Some(mut r) =
+                let positions = if error_tolerant {
+                    tolerant_positions(&sequence, length, verbose, &id, threshold)
+                } else {
+                    let indexes = chunk_fasta(sequence, length, verbose, id.clone());
                     calculate_indexes(indexes, length, verbose, id.clone(), threshold)
-                {
+                };
+
+                if let Some(mut r) = positions {
                     r.shift(offset);
                     s.send(r).expect("Did not send!");
                 }
@@ -331,6 +351,131 @@ fn calculate_indexes(
         let filtered_repeat_positions = RepeatPositions(collection).filter_by_frequency(frequency);
         Some(filtered_repeat_positions)
     }
+}
+
+/// The error tolerant counterpart of [`chunk_fasta`] followed by
+/// [`calculate_indexes`].
+fn tolerant_positions(
+    sequence: &[u8],
+    chunk_length: usize,
+    verbose: bool,
+    id: &str,
+    frequency: usize,
+) -> Option<RepeatPositions> {
+    let collection = tolerant_runs(sequence, chunk_length, id);
+    if collection.is_empty() {
+        if verbose {
+            eprintln!(
+                "[-]\t\tChromosome {id}: No consecutive repeats of length {chunk_length} were identified."
+            );
+        }
+        None
+    } else {
+        Some(RepeatPositions(collection).filter_by_frequency(frequency))
+    }
+}
+
+/// Find runs of a repeat which may contain sequencing errors.
+///
+/// A run is seeded where two adjacent chunks are identical, as in the exact
+/// algorithm. It is then extended chunk by chunk, scoring each chunk against
+/// the closest rotation of the seed (see [`MISMATCH_PENALTY`] and
+/// [`ROTATION_SWITCH_PENALTY`]). Extension stops once the score drops more
+/// than a fixed amount below its best, and the run is trimmed back to the
+/// chunk where the score was highest.
+fn tolerant_runs(sequence: &[u8], chunk_length: usize, id: &str) -> Vec<RepeatPosition> {
+    let sequence = sequence.to_ascii_uppercase();
+    let chunks: Vec<&[u8]> = sequence.chunks_exact(chunk_length).collect();
+    // enough to survive one indel: a chunk spanning it, then the rotation switch
+    let x_drop = 2 * chunk_length as i64 + ROTATION_SWITCH_PENALTY;
+
+    let mut runs = Vec::new();
+    let mut i = 0;
+    while i + 1 < chunks.len() {
+        if chunks[i] != chunks[i + 1] {
+            i += 1;
+            continue;
+        }
+        let seed = chunks[i];
+        let rotations: Vec<Vec<u8>> = (0..chunk_length)
+            .map(|r| [&seed[r..], &seed[..r]].concat())
+            .collect();
+
+        // the rotation each chunk matched, starting with the two seed chunks
+        let mut matched = vec![0, 0];
+        let mut score = 2 * chunk_length as i64;
+        let mut best = score;
+        let mut best_end = i + 2;
+        for (j, chunk) in chunks.iter().enumerate().skip(i + 2) {
+            let (r, chunk_score) = best_rotation(chunk, &rotations, *matched.last().unwrap());
+            matched.push(r);
+            score += chunk_score;
+            if score > best {
+                best = score;
+                best_end = j + 1;
+            }
+            if best - score > x_drop {
+                break;
+            }
+        }
+        matched.truncate(best_end - i);
+
+        runs.push(RepeatPosition {
+            id: id.to_string(),
+            start: i * chunk_length,
+            end: best_end * chunk_length,
+            sequence: consensus(&chunks[i..best_end], &matched),
+        });
+        i = best_end;
+    }
+    runs
+}
+
+/// The per position majority base across the chunks of a run, after undoing
+/// the rotation each chunk matched. A seed can itself carry an error (both
+/// seed chunks sharing it), so this, rather than the seed, labels the run.
+/// Ties go to the seed's base, as the first chunk always has rotation 0.
+fn consensus(chunks: &[&[u8]], rotations: &[usize]) -> String {
+    let k = chunks[0].len();
+    let mut counts: Vec<HashMap<u8, usize>> = vec![HashMap::new(); k];
+    for (chunk, &r) in chunks.iter().zip(rotations) {
+        // a chunk on rotation r has seed position (r + p) % k at position p
+        for (p, &base) in chunk.iter().enumerate() {
+            *counts[(r + p) % k].entry(base).or_insert(0) += 1;
+        }
+    }
+    counts
+        .iter()
+        .enumerate()
+        .map(|(p, c)| {
+            let seed_base = chunks[0][p];
+            let seed_count = c[&seed_base];
+            let (&base, &count) = c.iter().max_by_key(|(_, &n)| n).unwrap();
+            (if count > seed_count { base } else { seed_base }) as char
+        })
+        .collect()
+}
+
+/// Score a chunk against one rotation of the seed.
+fn chunk_score(chunk: &[u8], rotation: &[u8]) -> i64 {
+    let mismatches = chunk.iter().zip(rotation).filter(|(a, b)| a != b).count() as i64;
+    chunk.len() as i64 - (1 + MISMATCH_PENALTY) * mismatches
+}
+
+/// The best scoring rotation of the seed for this chunk, preferring to stay
+/// on the current rotation unless switching pays for itself.
+fn best_rotation(chunk: &[u8], rotations: &[Vec<u8>], current: usize) -> (usize, i64) {
+    let mut best = (current, chunk_score(chunk, &rotations[current]));
+    for (r, rotation) in rotations.iter().enumerate() {
+        if r == current {
+            continue;
+        }
+        let score = chunk_score(chunk, rotation) - ROTATION_SWITCH_PENALTY;
+        if score > best.1 {
+            best = (r, score);
+        }
+    }
+    best
 }
 
 /// check if a sequence looks like it is not
@@ -647,5 +792,89 @@ mod tests {
         let chunks = chunk_fasta(seq.into_bytes(), CHUNK_LENGTH, false, "".into());
         let positions = calculate_indexes(chunks, CHUNK_LENGTH, false, "test".into(), 0).unwrap();
         assert_eq!(positions.0, vec![run("test", 5, 25, "AACCT")]);
+    }
+
+    /// a small deterministic pseudo random sequence
+    fn random_seq(len: usize, mut state: u64) -> String {
+        (0..len)
+            .map(|_| {
+                state = state
+                    .wrapping_mul(6364136223846793005)
+                    .wrapping_add(1442695040888963407);
+                b"ACGT"[(state >> 62) as usize] as char
+            })
+            .collect()
+    }
+
+    fn tolerant(seq: &str, k: usize) -> Vec<RepeatPosition> {
+        tolerant_runs(seq.as_bytes(), k, "test")
+    }
+
+    #[test]
+    fn test_tolerant_matches_exact_on_clean_repeat() {
+        let seq = "TTAGGG".repeat(50);
+        assert_eq!(tolerant(&seq, 6), vec![run("test", 0, 300, "TTAGGG")]);
+    }
+
+    #[test]
+    fn test_tolerant_spans_substitutions() {
+        // a substitution every 20 copies breaks exact runs into short pieces
+        let mut seq = "TTAGGG".repeat(100).into_bytes();
+        for i in (60..600).step_by(120) {
+            seq[i + 3] = b'C';
+        }
+        let seq = String::from_utf8(seq).unwrap();
+        assert_eq!(tolerant(&seq, 6), vec![run("test", 0, 600, "TTAGGG")]);
+    }
+
+    #[test]
+    fn test_tolerant_spans_indels() {
+        // a deletion and, later, an insertion
+        let seq = format!(
+            "{}{}{}{}{}",
+            "TTAGGG".repeat(30),
+            "TAGGG",
+            "TTAGGG".repeat(30),
+            "TTAAGGG",
+            "TTAGGG".repeat(30)
+        );
+        let runs = tolerant(&seq, 6);
+        assert_eq!(runs.len(), 1);
+        assert_eq!(runs[0].start, 0);
+        assert!(seq.len() - runs[0].end < 6);
+    }
+
+    #[test]
+    fn test_tolerant_trims_trailing_junk() {
+        let seq = format!("{}{}", "TTAGGG".repeat(50), random_seq(300, 7));
+        assert_eq!(tolerant(&seq, 6), vec![run("test", 0, 300, "TTAGGG")]);
+    }
+
+    #[test]
+    fn test_tolerant_rejects_wrong_length() {
+        // 5-mers of a 6bp telomere must not extend into long runs
+        let seq = "TTAGGG".repeat(200);
+        assert!(tolerant(&seq, 5).iter().all(|r| r.get_count() < 10));
+    }
+
+    #[test]
+    fn test_tolerant_random_sequence_has_no_long_runs() {
+        let seq = random_seq(100_000, 42);
+        for k in 5..=12 {
+            assert!(tolerant(&seq, k).iter().all(|r| r.get_count() < 10));
+        }
+    }
+
+    #[test]
+    fn test_tolerant_labels_run_with_consensus() {
+        // both seed chunks carry the same error, the rest of the run does not
+        let seq = format!("{}{}", "TTCGGG".repeat(2), "TTAGGG".repeat(40));
+        assert_eq!(tolerant(&seq, 6), vec![run("test", 0, 252, "TTAGGG")]);
+    }
+
+    #[test]
+    fn test_consensus_undoes_rotation() {
+        let chunks: Vec<&[u8]> = vec![b"TTAGGG", b"TTAGGG", b"AGGGTT", b"AGGGTT"];
+        assert_eq!(consensus(&chunks, &[0, 0, 2, 2]), "TTAGGG");
     }
 }

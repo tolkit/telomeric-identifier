@@ -11,6 +11,9 @@ cargo build --release
 ```
 
 Pass several `name=binary` pairs to compare versions on the same simulated fastas.
+Extra `explore` flags can follow the binary (`"tolerant=target/release/tidk --error-tolerant"`).
+Set `ERROR_MODEL=mixed` to simulate substitutions, insertions and deletions in equal proportion
+(the default, `substitution`, matches the paper).
 The generator is not seeded, so counts vary slightly between runs.
 
 ## Results
@@ -23,3 +26,16 @@ The generator is not seeded, so counts vary slightly between runs.
 - At 5–10% error on 12 kb and 30 kb sequences, `new` reports nothing, because no exact run
   reaches `-t 100`. `old` reported junk units in these conditions. Error-tolerant run detection (roadmap phase 2)
   is meant to fix this.
+
+### Error-tolerant mode
+
+`results_error_tolerant_substitution.tsv` and `results_error_tolerant_mixed.tsv` compare
+exact runs with `--error-tolerant`.
+
+| | substitution | mixed (indels) |
+|---|---|---|
+| `AACCCT` top, exact | 16/21 | 16/21 |
+| `AACCCT` top, tolerant | 21/21 | 21/21 |
+| Copies recovered, tolerant, 5% error | 98–100% | 95–100% |
+| Copies recovered, tolerant, 10% error | 93–100% | 71–78% |
+| Units reported, tolerant (max) | 1 | 4 |

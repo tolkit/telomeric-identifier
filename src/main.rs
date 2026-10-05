@@ -97,6 +97,13 @@ fn main() -> Result<()> {
                         .default_value("0.01")
                 )
                 .arg(
+                    Arg::new("error-tolerant")
+                        .short('e')
+                        .long("error-tolerant")
+                        .help("Allow sequencing errors (substitutions and indels) within repeat runs. Useful for raw reads or noisy assemblies.")
+                        .action(clap::ArgAction::SetTrue)
+                )
+                .arg(
                     arg!(-v --verbose "Print verbose output.")
                         .action(clap::ArgAction::SetTrue)
                 )

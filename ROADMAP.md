@@ -22,9 +22,12 @@ work; they feed the methods of the phase 4 comparative paper.
 
 ## Phase 2: error tolerance and compound repeats
 
-- [ ] Detect tandem runs that tolerate errors (allow ≤ d mismatches per unit, or estimate the period by autocorrelation) so ONT reads and older assemblies at ≥2% error still give the true unit. At 5% error, exact runs never reach `-t 100`
+- [x] Error-tolerant run detection (`explore --error-tolerant`): runs are seeded on exact adjacent chunks, then extended with a scoring rule that tolerates substitutions, with a penalised rotation switch for indels and consensus labelling. True unit is top in 21/21 conditions for both substitution-only and mixed (indel) errors, with ≥95% of copies recovered at 5% error
+- [ ] Decide whether `--error-tolerant` becomes the default, after testing on real genomes and raw ONT/HiFi reads
+- [ ] Remaining tolerant mode artefacts: small 11-mer units (≤0.6%) at 10% indel error, where both seed copies share an indel
 - [ ] Describe compound / HOR telomeres (e.g. *Bombus* AACCT + AACCCG, mixed plant TTTAGGG/TTAGGG): unit composition and alternation per run, not a single winner
-- [ ] Benchmark on simulated reads and known-repeat genomes
+- [x] Benchmark on simulated reads (`benchmarks/accuracy`, `ERROR_MODEL=mixed` adds indels)
+- [ ] Benchmark on known-repeat genomes and real reads
 
 ## Phase 3: telomere QC for T2T assemblies
 
