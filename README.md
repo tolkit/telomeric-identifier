@@ -12,6 +12,7 @@
 2. `find` and `search` are essentially the same. They identify a repeat sequence in windows across the genome. `find` uses an in-built table of telomeric repeats, in `search` you supply your own.
 3. `plot` does what is says on the tin, and plots the csv output of `find` or `search` as an SVG.
 4. `build` builds the telomeric repeat database and saves on your local machine for use in `tidk find`.
+5. `ends` calls telomeres at both ends of each sequence, for telomere-to-telomere (T2T) assessment of an assembly.
 
 ## Install
 
@@ -68,6 +69,57 @@ Options:
       --log                      Output a log file.
   -h, --help                     Print help
   -V, --version                  Print version
+```
+
+### Ends
+
+`tidk ends` checks both ends of each sequence in an assembly for a telomere, and reports which sequences are telomere-to-telomere (T2T). Give the repeat unit with `--string` (any rotation or orientation), or leave it out to discover it from the sequence ends with the `explore` algorithm.
+
+For each end, `tidk ends` searches a window (`--window`, default 10kb) for runs of the repeat that are at least `--min-length` bp long (default 200), allowing sequencing errors unless `--exact` is given. Each end gets one of these statuses:
+
+- `present`: a telomere within `--max-offset` bp of the end (default 1000), on the expected strand. That is C-rich (e.g. `CCCTAA`) reading along the sequence at its start, and G-rich (`TTAGGG`) at its end.
+- `wrong_strand`: a telomere at the end, but on the other strand. Often a misjoin or an inverted end.
+- `not_terminal`: a telomere on the expected strand, but further than `--max-offset` from the end, so there is sequence beyond it to check.
+- `absent`: none of the above.
+
+Only `present` ends count towards T2T. Three files are written:
+
+- `<output>.ends.tsv`: every end with its status, telomere coordinates, length, distance from the end and strand. `window_limited` is `true` when the telomere reaches the inner edge of the window, so it may be longer than reported.
+- `<output>.ends.bed`: the telomeres found (0-based, half open), named by end and status.
+- `<output>.ends.json`: a summary (T2T, one end, no ends, and the flagged ends) for pipelines and reports.
+
+For example:
+`tidk ends --min-sequence-length 1000000 -o ilManJurt1 ilManJurt1.1.fa.gz` calls telomeres on the chromosomes of the meadow brown (*Maniola jurtina*) assembly, skipping unplaced scaffolds.
+
+```
+Call telomeres at both ends of each sequence, for telomere-to-telomere (T2T) assessment of an assembly.
+
+Usage: tidk ends [OPTIONS] --output <OUTPUT> <FASTA>
+
+Arguments:
+  <FASTA>  The input fasta file
+
+Options:
+  -s, --string [<STRING>]
+          The telomeric repeat unit, in any rotation or orientation. Discovered from the sequence ends if not given.
+  -w, --window [<WINDOW>]
+          Length of sequence to search at each end, in bp [default: 10000]
+      --min-length [<MIN_LENGTH>]
+          Minimum telomere length to call, in bp [default: 200]
+      --max-offset [<MAX_OFFSET>]
+          Maximum distance of a telomere from the sequence end, in bp. Telomeres further in are flagged as not_terminal [default: 1000]
+      --min-sequence-length [<MIN_SEQUENCE_LENGTH>]
+          Skip sequences shorter than this, in bp (e.g. unplaced scaffolds) [default: 0]
+      --exact
+          Only count runs of exactly identical repeats. By default runs may contain sequencing errors (substitutions and indels).
+  -o, --output <OUTPUT>
+          Output filename prefix
+  -d, --dir [<DIR>]
+          Output directory to write files to [default: .]
+  -h, --help
+          Print help
+  -V, --version
+          Print version
 ```
 
 ### Find

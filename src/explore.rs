@@ -495,6 +495,49 @@ fn best_rotation(chunk: &[u8], rotations: &[Vec<u8>], current: usize) -> (usize,
     best
 }
 
+/// All runs of repeats of one kmer length in a sequence, without filtering
+/// on run length or repeat type. Positions are relative to the sequence.
+pub(crate) fn find_runs(
+    sequence: &[u8],
+    chunk_length: usize,
+    id: &str,
+    error_tolerant: bool,
+) -> Vec<RepeatPosition> {
+    if error_tolerant {
+        tolerant_runs(sequence, chunk_length, id)
+    } else {
+        let indexes = chunk_fasta(sequence.to_vec(), chunk_length, false, id.to_string());
+        calculate_indexes(indexes, chunk_length, false, id.to_string(), 0)
+            .map(|r| r.0)
+            .unwrap_or_default()
+    }
+}
+
+/// The most abundant candidate telomeric repeat unit across a set of named
+/// sequences, as `tidk explore` would report it, along with the proportion
+/// of its copies on the minor strand. Names must be unique, as runs are
+/// merged by name.
+pub(crate) fn top_unit(
+    sequences: &[(String, &[u8])],
+    minimum: usize,
+    maximum: usize,
+    threshold: usize,
+    error_tolerant: bool,
+) -> Result<Option<(String, Option<f64>)>> {
+    let mut positions = RepeatPositions::new();
+    for (name, sequence) in sequences {
+        for length in minimum..=maximum {
+            let runs = find_runs(sequence, length, name, error_tolerant);
+            positions.add(&mut RepeatPositions(runs).filter_by_frequency(threshold).0);
+        }
+    }
+    let estimates = get_telomeric_repeat_estimates(&mut positions)?;
+    Ok(estimates.into_iter().next().map(|e| {
+        let minor = e.minor_strand_proportion();
+        (e.unit, minor)
+    }))
+}
+
 /// check if a sequence looks like it is not
 /// a telomeric repeat
 fn check_telomeric_repeat(sequence: &str) -> bool {
@@ -504,7 +547,7 @@ fn check_telomeric_repeat(sequence: &str) -> bool {
 
 /// Which way round a run reads, relative to its canonical unit.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-enum Orientation {
+pub(crate) enum Orientation {
     /// A rotation of the unit itself, e.g. CCCTAA for AACCCT.
     Unit,
     /// A rotation of the unit's reverse complement, e.g. TTAGGG for AACCCT.
@@ -516,7 +559,7 @@ enum Orientation {
 
 /// The orientation of a run's sequence relative to its primitive canonical
 /// unit (see [`utils::primitive_telomere_unit()`]).
-fn orientation(sequence: &str, unit: &str) -> Orientation {
+pub(crate) fn orientation(sequence: &str, unit: &str) -> Orientation {
     if utils::string_rotation(unit, &utils::reverse_complement(unit)) {
         return Orientation::Either;
     }

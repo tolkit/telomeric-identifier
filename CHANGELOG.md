@@ -15,6 +15,10 @@
 
 ### Added
 
+- `tidk ends`: calls a telomere at both ends of each sequence (`present`, `wrong_strand`,
+  `not_terminal` or `absent`) and reports which sequences are telomere-to-telomere, as TSV, BED
+  and a JSON summary. The repeat unit is given with `--string`, or discovered from the sequence
+  ends.
 - `copies_as_unit` and `copies_as_revcomp` columns in `tidk explore`: copies reading as the
   canonical unit (e.g. `CCCTAA` for `AACCCT`) and as its reverse complement (`TTAGGG`). `NA` for
   units that are a rotation of their own reverse complement.

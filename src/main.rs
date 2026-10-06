@@ -1,7 +1,7 @@
 use anyhow::Result;
 use clap::{arg, builder::ArgPredicate, crate_version, value_parser, Arg, Command};
 use std::path::PathBuf;
-use tidk::{build, clades::get_clades, explore, finder, plot, search, SubCommand};
+use tidk::{build, clades::get_clades, ends, explore, finder, plot, search, SubCommand};
 
 fn main() -> Result<()> {
     // command line options
@@ -119,6 +119,54 @@ fn main() -> Result<()> {
                 )
         )
         .subcommand(
+            Command::new("ends")
+                .about("Call telomeres at both ends of each sequence, for telomere-to-telomere (T2T) assessment of an assembly.")
+                .arg(
+                    Arg::new("fasta")
+                        .value_name("FASTA")
+                        .value_parser(value_parser!(PathBuf))
+                        .required(true)
+                        .help("The input fasta file")
+                )
+                .arg(
+                    arg!(-s --string [STRING] "The telomeric repeat unit, in any rotation or orientation. Discovered from the sequence ends if not given.")
+                )
+                .arg(
+                    arg!(-w --window [WINDOW] "Length of sequence to search at each end, in bp")
+                        .value_parser(value_parser!(usize))
+                        .default_value("10000")
+                )
+                .arg(
+                    arg!(--"min-length" [MIN_LENGTH] "Minimum telomere length to call, in bp")
+                        .value_parser(value_parser!(usize))
+                        .default_value("200")
+                )
+                .arg(
+                    arg!(--"max-offset" [MAX_OFFSET] "Maximum distance of a telomere from the sequence end, in bp. Telomeres further in are flagged as not_terminal")
+                        .value_parser(value_parser!(usize))
+                        .default_value("1000")
+                )
+                .arg(
+                    arg!(--"min-sequence-length" [MIN_SEQUENCE_LENGTH] "Skip sequences shorter than this, in bp (e.g. unplaced scaffolds)")
+                        .value_parser(value_parser!(usize))
+                        .default_value("0")
+                )
+                .arg(
+                    arg!(--exact "Only count runs of exactly identical repeats. By default runs may contain sequencing errors (substitutions and indels).")
+                        .action(clap::ArgAction::SetTrue)
+                )
+                .arg(
+                    arg!(-o --output <OUTPUT> "Output filename prefix")
+                        .value_parser(value_parser!(PathBuf))
+                        .required(true)
+                )
+                .arg(
+                    arg!(-d --dir [DIR] "Output directory to write files to")
+                        .value_parser(value_parser!(PathBuf))
+                        .default_value(".")
+                )
+        )
+        .subcommand(
             Command::new("search")
                 .about("Search the input genome with a specific telomeric repeat search string.")
                 .arg(
@@ -204,6 +252,9 @@ fn main() -> Result<()> {
         }
         Some(("search", matches)) => {
             search::search(matches, SubCommand::Search)?;
+        }
+        Some(("ends", matches)) => {
+            ends::ends(matches)?;
         }
         Some(("plot", matches)) => {
             plot::plot(matches)?;

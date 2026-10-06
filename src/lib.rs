@@ -14,6 +14,8 @@ pub mod build;
 /// A module where the clades are defined, and their
 /// respective telomeric repeats are enumerated.
 pub mod clades;
+/// The entry point for the `tidk ends` subcommand.
+pub mod ends;
 /// The entry point for the `tidk explore` subcommand.
 pub mod explore;
 /// The entry point for the `tidk find` subcommand.

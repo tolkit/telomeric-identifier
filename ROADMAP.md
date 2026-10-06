@@ -33,8 +33,8 @@ work; they feed the methods of the phase 4 comparative paper.
 
 ## Phase 3: telomere QC for T2T assemblies
 
-- [ ] New subcommand (working name `tidk ends`): per-chromosome-end presence, length, strand and T2T status
-- [ ] BED + JSON output, plus a whole-assembly summary ("18/20 T2T")
+- [x] `tidk ends`: presence, length, strand and T2T status at each chromosome end, with `wrong_strand` and `not_terminal` flags. Oak dhQueRobu3.1 is 7/12 T2T. Meadow brown ilManJurt1.1 is 12/30, with 10 `not_terminal` ends: correctly oriented telomeres 1.5–8 kb in from the end (possibly TRAS/SART retrotransposon insertions; not yet checked)
+- [x] BED + JSON output, plus a whole-assembly summary ("18/20 T2T")
 - [ ] MultiQC module; integrate with Tree of Life assembly/curation pipelines
 - [ ] Per-read telomere length from HiFi/ONT reads, for any species (no known repeat needed)
 
