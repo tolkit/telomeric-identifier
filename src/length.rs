@@ -1,4 +1,4 @@
-use crate::ends::{self, EndsConfig, Side, Status, Strand, Telomere, STRAND_BIAS_WARNING};
+use crate::ends::{self, Block, EndsConfig, Side, Status, Strand, Telomere, STRAND_BIAS_WARNING};
 use crate::open_fasta_reader;
 use anyhow::Result;
 use clap::crate_version;
@@ -22,6 +22,16 @@ const CANONICAL_DENSITY: f64 = 0.8;
 // windows below the density in a row that end the tract, so one noisy window
 // (e.g. an error cluster in ONT reads) doesn't
 const CANONICAL_STOP_WINDOWS: usize = 2;
+
+// The outer few hundred bp of a read are often degraded (about 7% of HiFi
+// telomeric reads from HG002), so the telomere's run starts further in than
+// `--max-offset`. A telomere starting up to this far from the read end is
+// extended to the read end...
+const DEGRADED_SEARCH: usize = 2000;
+// ...when at least this proportion of the positions between it and the read
+// end start an exact copy of the unit. Degraded HG002 read ends were about
+// 40-60%; random sequence and adapters are well under 1%.
+const DEGRADED_DENSITY: f64 = 0.2;
 
 /// A telomere at one end of a read.
 struct ReadTelomere {
@@ -138,9 +148,12 @@ fn read_telomeres(index: usize, id: &str, seq: &[u8], config: &EndsConfig) -> Ve
     if blocks.is_empty() {
         return vec![];
     }
+    let rotations = unit_rotations(&config.unit);
     let mut telomeres: Vec<ReadTelomere> = [Side::Start, Side::End]
         .into_iter()
         .filter_map(|side| {
+            let blocks =
+                extend_over_degraded_end(&blocks, &seq, side, &rotations, config.min_length);
             let call = ends::classify_end(&blocks, seq.len(), side, 0, config);
             match call.status {
                 Status::Present | Status::WrongStrand => Some(ReadTelomere {
@@ -161,20 +174,76 @@ fn read_telomeres(index: usize, id: &str, seq: &[u8], config: &EndsConfig) -> Ve
     if telomeres.len() == 2 && telomeres[0].telomere.strand == telomeres[1].telomere.strand {
         telomeres.retain(|t| t.status == Status::Present);
     }
-    let rotations = unit_rotations(&config.unit);
     for t in &mut telomeres {
         let region = &seq[t.telomere.start..t.telomere.end];
         t.canonical_length = canonical_length(region, t.side, &rotations);
+        // another block, outside this telomere
         let interrupted = blocks.iter().any(|&(start, end, strand)| {
             strand == t.telomere.strand
                 && end - start >= config.min_length
-                && (start, end) != (t.telomere.start, t.telomere.end)
+                && (end <= t.telomere.start || start >= t.telomere.end)
         });
         if interrupted {
             t.telomere.window_limited = true;
         }
     }
     telomeres
+}
+
+/// Extend the outermost telomeric block at one end of a read to the read end,
+/// when it starts within [`DEGRADED_SEARCH`] of the end and the sequence in
+/// between is degraded telomeric repeat (see [`DEGRADED_DENSITY`]).
+fn extend_over_degraded_end(
+    blocks: &[Block],
+    seq: &[u8],
+    side: Side,
+    rotations: &HashSet<Vec<u8>>,
+    min_length: usize,
+) -> Vec<Block> {
+    let mut blocks = blocks.to_vec();
+    let long_enough = |b: &&mut Block| b.1 - b.0 >= min_length;
+    let outermost = match side {
+        Side::Start => blocks.iter_mut().filter(long_enough).min_by_key(|b| b.0),
+        Side::End => blocks.iter_mut().filter(long_enough).max_by_key(|b| b.1),
+    };
+    let k = rotations.iter().next().map_or(0, |r| r.len());
+    if let Some(block) = outermost {
+        let gap = match side {
+            Side::Start => 0..block.0,
+            Side::End => block.1..seq.len(),
+        };
+        // a gap shorter than the unit is just the phase of the chunks runs are found in
+        if gap.len() < k
+            || (gap.len() <= DEGRADED_SEARCH
+                && copy_density(&seq[gap], rotations) >= DEGRADED_DENSITY)
+        {
+            match side {
+                Side::Start => block.0 = 0,
+                Side::End => block.1 = seq.len(),
+            }
+        }
+    }
+    blocks
+}
+
+/// For each position, whether it starts an exact copy of the unit, in any phase.
+fn copy_starts(region: &[u8], rotations: &HashSet<Vec<u8>>) -> Vec<bool> {
+    let k = rotations.iter().next().map_or(0, |r| r.len());
+    if k == 0 || region.len() < k {
+        return vec![];
+    }
+    (0..=region.len() - k)
+        .map(|i| rotations.contains(&region[i..i + k]))
+        .collect()
+}
+
+/// The proportion of positions in a region starting an exact copy of the unit.
+fn copy_density(region: &[u8], rotations: &HashSet<Vec<u8>>) -> f64 {
+    let starts = copy_starts(region, rotations);
+    if starts.is_empty() {
+        return 0.0;
+    }
+    starts.iter().filter(|&&c| c).count() as f64 / starts.len() as f64
 }
 
 /// All rotations of the unit and of its reverse complement. A window of the
@@ -196,13 +265,10 @@ fn unit_rotations(unit: &str) -> HashSet<Vec<u8>> {
 /// the first canonical window are part of the tract rather than ending it.
 fn canonical_length(region: &[u8], side: Side, rotations: &HashSet<Vec<u8>>) -> usize {
     let k = rotations.iter().next().map_or(0, |r| r.len());
-    if k == 0 || region.len() < k {
+    let mut starts = copy_starts(region, rotations);
+    if starts.is_empty() {
         return 0;
     }
-    // positions starting an exact copy of the unit, in any phase
-    let mut starts: Vec<bool> = (0..=region.len() - k)
-        .map(|i| rotations.contains(&region[i..i + k]))
-        .collect();
     // walk inward from the outer edge
     if side == Side::End {
         starts.reverse();
@@ -591,5 +657,54 @@ mod tests {
         let rotations = unit_rotations("AACCCT");
         let length = canonical_length(region.as_bytes(), Side::End, &rotations);
         assert!(length.abs_diff(3300) <= 120, "{length}");
+    }
+
+    /// degraded repeat: two exact units then 12 random bases, repeated.
+    /// About 30% of positions start an exact copy, but error-tolerant runs
+    /// don't extend through it.
+    fn degraded(blocks: usize, seed: u64) -> String {
+        (0..blocks)
+            .map(|i| format!("TTAGGGTTAGGG{}", random_seq(12, seed + i as u64)))
+            .collect()
+    }
+
+    #[test]
+    fn test_degraded_read_end_extended() {
+        // 600bp of degraded repeat at the read end, beyond --max-offset
+        let read = format!(
+            "{}{}{}",
+            random_seq(5000, 13),
+            "TTAGGG".repeat(500),
+            degraded(25, 100)
+        );
+        let t = read_telomeres(0, "r", read.as_bytes(), &config());
+        assert_eq!(t.len(), 1);
+        assert_eq!(t[0].status, Status::Present);
+        assert_eq!(t[0].telomere.end, read.len());
+        assert!(t[0].length().abs_diff(3600) <= 12, "{}", t[0].length());
+    }
+
+    #[test]
+    fn test_non_telomeric_read_end_not_extended() {
+        // 600bp of other sequence after the telomere: not at the read end
+        let read = format!(
+            "{}{}{}",
+            random_seq(5000, 14),
+            "TTAGGG".repeat(500),
+            random_seq(600, 15)
+        );
+        assert!(read_telomeres(0, "r", read.as_bytes(), &config()).is_empty());
+    }
+
+    #[test]
+    fn test_copy_density() {
+        let rotations = unit_rotations("AACCCT");
+        assert_eq!(
+            copy_density("TTAGGG".repeat(10).as_bytes(), &rotations),
+            1.0
+        );
+        let d = copy_density(degraded(25, 300).as_bytes(), &rotations);
+        assert!((0.2..0.4).contains(&d), "{d}");
+        assert!(copy_density(random_seq(2000, 18).as_bytes(), &rotations) < 0.02);
     }
 }
