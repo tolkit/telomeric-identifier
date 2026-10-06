@@ -131,12 +131,19 @@ A read from a chromosome start begins with the telomere, reading C-rich (e.g. `C
 
 A telomere is `anchored` when the read has non-telomeric sequence inward of it, and no more telomeric repeat on the same strand further in. Only anchored telomeres are used for the length summary. Otherwise the read may start or end within the telomere, or the telomere may be interrupted (e.g. by telomeric retrotransposons in some insects), so the length is a lower bound.
 
+Two lengths are reported for each telomere:
+
+- `telomere_length`: the whole telomere, found with error-tolerant runs. This includes most of the telomere variant repeats (TVRs) at its inner edge.
+- `canonical_length`: the canonical tract at the outer edge, made of exact copies of the unit, before the TVRs. It is measured inward from the read end in windows of 20 copies of the unit, and ends where under 80% of a window's positions start an exact copy, for two windows in a row. Degraded repeat at the read end counts as part of the tract. `tvr_length` is the rest of the telomere.
+
+On HG002 reads, `canonical_length` matches the per-read lengths from [Telogator2](https://github.com/zstephens/telogator2), which measures the canonical tract: median difference +1bp (ONT) and -40bp (HiFi). `telomere_length` is about 1kb longer, roughly the TVR length.
+
 Lengths are summarised separately for G-rich and C-rich telomeres, as one strand can be basecalled much worse than the other (e.g. the G-rich strand in older ONT data). A warning is printed if one strand has under 10% of the telomeric reads. Two files are written:
 
-- `<output>.length.tsv`: every telomere found at a read end, with its strand, status, length and whether it is anchored.
-- `<output>.length.json`: the number of reads and the median, mean, 10th and 90th percentile and maximum of anchored lengths for each strand.
+- `<output>.length.tsv`: every telomere found at a read end, with its strand, status, `telomere_length`, `canonical_length`, `tvr_length` and whether it is anchored.
+- `<output>.length.json`: for each strand, the number of reads and the median, mean, 10th and 90th percentile and maximum of anchored `telomere_length` and `canonical_length`.
 
-Lengths have not yet been validated against telomere lengths measured by other methods, so treat them as estimates. The distributions can be wide and bimodal, so look at the per-read lengths rather than only the medians.
+Lengths have been compared with Telogator2 on human reads, but not with non-sequencing methods or other species, so treat them as estimates. The distributions can be wide and bimodal, so look at the per-read lengths rather than only the medians.
 
 ```
 Measure telomere lengths from long reads (PacBio HiFi or ONT), using telomeres at read ends.

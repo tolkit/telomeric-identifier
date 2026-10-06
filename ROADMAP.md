@@ -37,7 +37,9 @@ work; they feed the methods of the phase 4 comparative paper.
 - [x] BED + JSON output, plus a whole-assembly summary ("18/20 T2T")
 - [ ] MultiQC module; integrate with Tree of Life assembly/curation pipelines
 - [x] `tidk length`: per-read telomere length from HiFi/ONT reads, summarised by strand and using only anchored reads. Oak HiFi gives median 4.3 kb (G-rich) and 6.7 kb (C-rich) from about 4× coverage; the 2019 meadow brown ONT gives almost no anchored telomeres
-- [ ] Validate `tidk length` against an independent method (e.g. human samples with published Telogator2 or TRF lengths)
+- [x] Compare `tidk length` with Telogator2 on HG002 (HiFi and ONT telomere reads). tidk measures 93–98% of Telogator2's reads, and per-read whole-telomere lengths correlate with r = 0.91. Telogator2 measures the canonical tract only, so tidk now reports `canonical_length` (median difference +1 / −40 bp, r = 0.78–0.81) as well as the whole telomere including TVRs (`telomere_length`, about +1 kb)
+- [ ] Degraded read ends: 7% of HiFi telomeric reads have a degraded outer few hundred bp, so their telomere run starts beyond `--max-offset` and the read is missed (`--max-offset 2000` recovers them)
+- [ ] Validate against a non-sequencing method (e.g. TRF Southern blots) and in another species
 - [ ] Understand why C-rich telomeres are longer than G-rich in the same read sets (meadow brown HiFi p = 0.01; oak HiFi and ONT in the same direction). Reverse complementing the reads swaps the result, so it is in the data, not the algorithm
 - [ ] Interrupted telomeres (e.g. Lepidoptera TRAS/SART insertions): report the whole telomeric region as well as the uninterrupted terminal tract
 

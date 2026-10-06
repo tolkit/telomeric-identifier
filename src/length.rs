@@ -3,11 +3,25 @@ use crate::open_fasta_reader;
 use anyhow::Result;
 use clap::crate_version;
 use rayon::prelude::*;
+use std::collections::HashSet;
 use std::fs::{create_dir_all, File};
 use std::io::{LineWriter, Write};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::channel;
+
+// The canonical tract is the outer part of a telomere made of exact copies of
+// the unit, before telomere variant repeats (TVRs) further in. It is measured
+// in windows of this many copies of the unit, inward from the outer edge...
+const CANONICAL_WINDOW_UNITS: usize = 20;
+// ...and continues while this proportion of a window's positions start an
+// exact copy of the unit (1.0 for a pure repeat, in any phase; each variant
+// base removes up to a unit length of positions). On HG002 reads, canonical
+// tracts were 91-97% canonical, and TVR regions about 67%.
+const CANONICAL_DENSITY: f64 = 0.8;
+// windows below the density in a row that end the tract, so one noisy window
+// (e.g. an error cluster in ONT reads) doesn't
+const CANONICAL_STOP_WINDOWS: usize = 2;
 
 /// A telomere at one end of a read.
 struct ReadTelomere {
@@ -18,11 +32,20 @@ struct ReadTelomere {
     side: Side,
     status: Status,
     telomere: Telomere,
+    /// Length of the canonical tract at the outer edge of the telomere.
+    canonical_length: usize,
 }
 
 impl ReadTelomere {
+    /// The whole telomere, including telomere variant repeats further in.
     fn length(&self) -> usize {
         self.telomere.end - self.telomere.start
+    }
+
+    /// Telomere variant repeats and other degenerate repeat inward of the
+    /// canonical tract.
+    fn tvr_length(&self) -> usize {
+        self.length() - self.canonical_length
     }
 
     /// There is non-telomeric sequence inward of the telomere, so the read
@@ -127,6 +150,7 @@ fn read_telomeres(index: usize, id: &str, seq: &[u8], config: &EndsConfig) -> Ve
                     side,
                     status: call.status,
                     telomere: call.telomere?,
+                    canonical_length: 0,
                 }),
                 Status::NotTerminal | Status::Absent => None,
             }
@@ -137,7 +161,10 @@ fn read_telomeres(index: usize, id: &str, seq: &[u8], config: &EndsConfig) -> Ve
     if telomeres.len() == 2 && telomeres[0].telomere.strand == telomeres[1].telomere.strand {
         telomeres.retain(|t| t.status == Status::Present);
     }
+    let rotations = unit_rotations(&config.unit);
     for t in &mut telomeres {
+        let region = &seq[t.telomere.start..t.telomere.end];
+        t.canonical_length = canonical_length(region, t.side, &rotations);
         let interrupted = blocks.iter().any(|&(start, end, strand)| {
             strand == t.telomere.strand
                 && end - start >= config.min_length
@@ -150,16 +177,70 @@ fn read_telomeres(index: usize, id: &str, seq: &[u8], config: &EndsConfig) -> Ve
     telomeres
 }
 
+/// All rotations of the unit and of its reverse complement. A window of the
+/// sequence matching one of these is an exact copy of the unit.
+fn unit_rotations(unit: &str) -> HashSet<Vec<u8>> {
+    let revcomp = crate::utils::reverse_complement(unit);
+    [unit.as_bytes(), revcomp.as_bytes()]
+        .iter()
+        .flat_map(|u| (0..u.len()).map(move |r| [&u[r..], &u[..r]].concat()))
+        .collect()
+}
+
+/// Length of the canonical tract of a telomere: from the outer edge (the read
+/// start for a telomere at the start, the read end for one at the end),
+/// windows of [`CANONICAL_WINDOW_UNITS`] copies of the unit are added while
+/// at least [`CANONICAL_DENSITY`] of their positions start an exact copy of
+/// the unit, stopping at [`CANONICAL_STOP_WINDOWS`] windows in a row below
+/// that. Read ends are often degraded, so windows below the density before
+/// the first canonical window are part of the tract rather than ending it.
+fn canonical_length(region: &[u8], side: Side, rotations: &HashSet<Vec<u8>>) -> usize {
+    let k = rotations.iter().next().map_or(0, |r| r.len());
+    if k == 0 || region.len() < k {
+        return 0;
+    }
+    // positions starting an exact copy of the unit, in any phase
+    let mut starts: Vec<bool> = (0..=region.len() - k)
+        .map(|i| rotations.contains(&region[i..i + k]))
+        .collect();
+    // walk inward from the outer edge
+    if side == Side::End {
+        starts.reverse();
+    }
+    let window = CANONICAL_WINDOW_UNITS * k;
+    let mut length = 0;
+    let mut below = 0;
+    let mut seen_canonical = false;
+    for (i, w) in starts.chunks(window).enumerate() {
+        let density = w.iter().filter(|&&c| c).count() as f64 / w.len() as f64;
+        if density >= CANONICAL_DENSITY {
+            seen_canonical = true;
+            below = 0;
+            length = i * window + w.len();
+            // the last k - 1 bases can't start a copy, but are covered by one
+            if length == starts.len() {
+                length = region.len();
+            }
+        } else if seen_canonical {
+            below += 1;
+            if below >= CANONICAL_STOP_WINDOWS {
+                break;
+            }
+        }
+    }
+    length
+}
+
 fn write_tsv(telomeres: &[ReadTelomere], path: &str) -> Result<()> {
     let mut f = LineWriter::new(File::create(path)?);
     writeln!(
         f,
-        "read_id\tread_length\tside\tstatus\tstrand\ttelomere_start\ttelomere_end\ttelomere_length\tanchored"
+        "read_id\tread_length\tside\tstatus\tstrand\ttelomere_start\ttelomere_end\ttelomere_length\tcanonical_length\ttvr_length\tanchored"
     )?;
     for t in telomeres {
         writeln!(
             f,
-            "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+            "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
             t.id,
             t.read_length,
             t.side.name(),
@@ -168,6 +249,8 @@ fn write_tsv(telomeres: &[ReadTelomere], path: &str) -> Result<()> {
             t.telomere.start,
             t.telomere.end,
             t.length(),
+            t.canonical_length,
+            t.tvr_length(),
             t.anchored()
         )?;
     }
@@ -178,25 +261,36 @@ fn write_tsv(telomeres: &[ReadTelomere], path: &str) -> Result<()> {
 struct StrandGroup {
     strand: Strand,
     reads: usize,
-    /// Lengths from anchored reads, sorted.
+    /// Whole telomere lengths from anchored reads, sorted.
     anchored_lengths: Vec<usize>,
+    /// Canonical tract lengths from anchored reads, sorted.
+    anchored_canonical: Vec<usize>,
 }
 
-impl StrandGroup {
-    /// Nearest rank percentile of the anchored lengths.
-    fn percentile(&self, p: f64) -> Option<usize> {
-        let n = self.anchored_lengths.len();
-        if n == 0 {
-            return None;
-        }
-        let rank = ((p / 100.0) * n as f64).ceil().max(1.0) as usize;
-        Some(self.anchored_lengths[rank.min(n) - 1])
+/// Nearest rank percentile of sorted values.
+fn percentile(sorted: &[usize], p: f64) -> Option<usize> {
+    let n = sorted.len();
+    if n == 0 {
+        return None;
     }
+    let rank = ((p / 100.0) * n as f64).ceil().max(1.0) as usize;
+    Some(sorted[rank.min(n) - 1])
+}
 
-    fn mean(&self) -> Option<f64> {
-        let n = self.anchored_lengths.len();
-        (n > 0).then(|| self.anchored_lengths.iter().sum::<usize>() as f64 / n as f64)
-    }
+fn mean(values: &[usize]) -> Option<f64> {
+    let n = values.len();
+    (n > 0).then(|| values.iter().sum::<usize>() as f64 / n as f64)
+}
+
+/// Summary statistics of sorted lengths, for the JSON summary.
+fn length_stats(sorted: &[usize]) -> serde_json::Value {
+    serde_json::json!({
+        "median": percentile(sorted, 50.0),
+        "mean": mean(sorted),
+        "p10": percentile(sorted, 10.0),
+        "p90": percentile(sorted, 90.0),
+        "max": sorted.last(),
+    })
 }
 
 /// `present` telomeres grouped by strand. Strands are summarised separately
@@ -210,16 +304,17 @@ fn strand_groups(telomeres: &[ReadTelomere]) -> Vec<StrandGroup> {
                 .iter()
                 .filter(|t| t.status == Status::Present && t.telomere.strand == strand)
                 .collect();
-            let mut anchored_lengths: Vec<_> = present
-                .iter()
-                .filter(|t| t.anchored())
-                .map(|t| t.length())
-                .collect();
+            let anchored: Vec<_> = present.iter().filter(|t| t.anchored()).collect();
+            let mut anchored_lengths: Vec<_> = anchored.iter().map(|t| t.length()).collect();
+            let mut anchored_canonical: Vec<_> =
+                anchored.iter().map(|t| t.canonical_length).collect();
             anchored_lengths.sort_unstable();
+            anchored_canonical.sort_unstable();
             StrandGroup {
                 strand,
                 reads: present.len(),
                 anchored_lengths,
+                anchored_canonical,
             }
         })
         .filter(|g| g.reads > 0)
@@ -241,11 +336,8 @@ fn write_summary(
                 serde_json::json!({
                     "reads": g.reads,
                     "anchored_reads": g.anchored_lengths.len(),
-                    "median": g.percentile(50.0),
-                    "mean": g.mean(),
-                    "p10": g.percentile(10.0),
-                    "p90": g.percentile(90.0),
-                    "max": g.anchored_lengths.last(),
+                    "telomere_length": length_stats(&g.anchored_lengths),
+                    "canonical_length": length_stats(&g.anchored_canonical),
                 }),
             )
         })
@@ -270,13 +362,14 @@ fn print_summary(telomeres: &[ReadTelomere], groups: &[StrandGroup], scanned: us
     let fmt = |x: Option<usize>| x.map_or("NA".to_string(), |x| x.to_string());
     for g in groups {
         eprintln!(
-            "[+]\t{} telomeres: {} reads ({} anchored), median length {}bp (10th-90th percentile {}-{}bp)",
+            "[+]\t{} telomeres: {} reads ({} anchored), median length {}bp (10th-90th percentile {}-{}bp), median canonical tract {}bp",
             g.strand.name(),
             g.reads,
             g.anchored_lengths.len(),
-            fmt(g.percentile(50.0)),
-            fmt(g.percentile(10.0)),
-            fmt(g.percentile(90.0))
+            fmt(percentile(&g.anchored_lengths, 50.0)),
+            fmt(percentile(&g.anchored_lengths, 10.0)),
+            fmt(percentile(&g.anchored_lengths, 90.0)),
+            fmt(percentile(&g.anchored_canonical, 50.0))
         );
     }
     if groups.is_empty() {
@@ -379,15 +472,70 @@ mod tests {
 
     #[test]
     fn test_percentile() {
-        let g = StrandGroup {
-            strand: Strand::GRich,
-            reads: 5,
-            anchored_lengths: vec![100, 200, 300, 400, 500],
-        };
-        assert_eq!(g.percentile(50.0), Some(300));
-        assert_eq!(g.percentile(10.0), Some(100));
-        assert_eq!(g.percentile(90.0), Some(500));
-        assert_eq!(g.mean(), Some(300.0));
+        let v = [100, 200, 300, 400, 500];
+        assert_eq!(percentile(&v, 50.0), Some(300));
+        assert_eq!(percentile(&v, 10.0), Some(100));
+        assert_eq!(percentile(&v, 90.0), Some(500));
+        assert_eq!(mean(&v), Some(300.0));
+        assert_eq!(percentile(&[], 50.0), None);
+    }
+
+    /// a TVR-like region: half canonical units, half variants
+    fn tvr(copies: usize) -> String {
+        (0..copies)
+            .map(|i| match i % 4 {
+                0 => "TCAGGG",
+                2 => "TGAGGG",
+                _ => "TTAGGG",
+            })
+            .collect()
+    }
+
+    #[test]
+    fn test_canonical_tract_at_read_end() {
+        // subtelomere, TVRs, then 3kb canonical to the read end
+        let read = format!(
+            "{}{}{}",
+            random_seq(5000, 9),
+            tvr(250),
+            "TTAGGG".repeat(500)
+        );
+        let t = read_telomeres(0, "r", read.as_bytes(), &config());
+        assert_eq!(t.len(), 1);
+        assert!(t[0].length() > 3000 + 600, "{}", t[0].length());
+        assert!(
+            t[0].canonical_length.abs_diff(3000) <= 120,
+            "{}",
+            t[0].canonical_length
+        );
+        assert_eq!(t[0].tvr_length(), t[0].length() - t[0].canonical_length);
+    }
+
+    #[test]
+    fn test_canonical_tract_at_read_start() {
+        let read = format!(
+            "{}{}{}",
+            "CCCTAA".repeat(500),
+            crate::utils::reverse_complement(&tvr(250)),
+            random_seq(5000, 10)
+        );
+        let t = read_telomeres(0, "r", read.as_bytes(), &config());
+        assert_eq!(t.len(), 1);
+        assert!(
+            t[0].canonical_length.abs_diff(3000) <= 120,
+            "{}",
+            t[0].canonical_length
+        );
+    }
+
+    #[test]
+    fn test_canonical_tract_survives_isolated_errors() {
+        let mut tract = "TTAGGG".repeat(500).into_bytes();
+        for i in (0..3000).step_by(50) {
+            tract[i] = b'C';
+        }
+        let rotations = unit_rotations("AACCCT");
+        assert_eq!(canonical_length(&tract, Side::End, &rotations), 3000);
     }
 
     #[test]
@@ -425,5 +573,23 @@ mod tests {
         let t = read_telomeres(0, "r", read.as_bytes(), &config());
         assert_eq!(t.len(), 1);
         assert_eq!(t[0].status, Status::Present);
+    }
+
+    #[test]
+    fn test_canonical_tract_includes_degraded_read_end() {
+        // 300bp of degraded repeat at the read end, outside 3kb canonical
+        let mut end = "TTAGGG".repeat(50).into_bytes();
+        for i in (0..300).step_by(4) {
+            end[i] = b'A';
+        }
+        let region = format!(
+            "{}{}{}",
+            tvr(250),
+            "TTAGGG".repeat(500),
+            String::from_utf8(end).unwrap()
+        );
+        let rotations = unit_rotations("AACCCT");
+        let length = canonical_length(region.as_bytes(), Side::End, &rotations);
+        assert!(length.abs_diff(3300) <= 120, "{length}");
     }
 }

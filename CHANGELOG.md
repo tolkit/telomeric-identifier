@@ -15,9 +15,11 @@
 
 ### Added
 
-- `tidk length`: measures telomere lengths from long reads, from telomeres at read ends. Lengths
-  are summarised separately for G-rich and C-rich telomeres, and only for reads that span the
-  whole telomere.
+- `tidk length`: measures telomere lengths from long reads, from telomeres at read ends. It
+  reports both the whole telomere, including telomere variant repeats (TVRs), and the canonical
+  tract at its outer edge, which matches Telogator2's per-read lengths on HG002. Lengths are
+  summarised separately for G-rich and C-rich telomeres, and only for reads that span the whole
+  telomere.
 - `tidk ends`: calls a telomere at both ends of each sequence (`present`, `wrong_strand`,
   `not_terminal` or `absent`) and reports which sequences are telomere-to-telomere, as TSV, BED
   and a JSON summary. The repeat unit is given with `--string`, or discovered from the sequence
