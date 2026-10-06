@@ -36,7 +36,10 @@ work; they feed the methods of the phase 4 comparative paper.
 - [x] `tidk ends`: presence, length, strand and T2T status at each chromosome end, with `wrong_strand` and `not_terminal` flags. Oak dhQueRobu3.1 is 7/12 T2T. Meadow brown ilManJurt1.1 is 12/30, with 10 `not_terminal` ends: correctly oriented telomeres 1.5–8 kb in from the end (possibly TRAS/SART retrotransposon insertions; not yet checked)
 - [x] BED + JSON output, plus a whole-assembly summary ("18/20 T2T")
 - [ ] MultiQC module; integrate with Tree of Life assembly/curation pipelines
-- [ ] Per-read telomere length from HiFi/ONT reads, for any species (no known repeat needed)
+- [x] `tidk length`: per-read telomere length from HiFi/ONT reads, summarised by strand and using only anchored reads. Oak HiFi gives median 4.3 kb (G-rich) and 6.7 kb (C-rich) from about 4× coverage; the 2019 meadow brown ONT gives almost no anchored telomeres
+- [ ] Validate `tidk length` against an independent method (e.g. human samples with published Telogator2 or TRF lengths)
+- [ ] Understand why C-rich telomeres are longer than G-rich in the same read sets (meadow brown HiFi p = 0.01; oak HiFi and ONT in the same direction). Reverse complementing the reads swaps the result, so it is in the data, not the algorithm
+- [ ] Interrupted telomeres (e.g. Lepidoptera TRAS/SART insertions): report the whole telomeric region as well as the uninterrupted terminal tract
 
 ## Phase 4: comparative telomere evolution paper
 

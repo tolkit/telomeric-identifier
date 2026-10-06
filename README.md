@@ -13,6 +13,7 @@
 3. `plot` does what is says on the tin, and plots the csv output of `find` or `search` as an SVG.
 4. `build` builds the telomeric repeat database and saves on your local machine for use in `tidk find`.
 5. `ends` calls telomeres at both ends of each sequence, for telomere-to-telomere (T2T) assessment of an assembly.
+6. `length` measures telomere lengths from long reads (PacBio HiFi or ONT).
 
 ## Install
 
@@ -120,6 +121,40 @@ Options:
           Print help
   -V, --version
           Print version
+```
+
+### Length
+
+`tidk length` measures telomere lengths from long reads, using reads that reach a chromosome end. The repeat unit must be given with `--string`; use `tidk explore` on the reads to find it if needed.
+
+A read from a chromosome start begins with the telomere, reading C-rich (e.g. `CCCTAA`). A read from a chromosome end finishes with it, reading G-rich (`TTAGGG`). Telomeres at a read end within `--max-offset` bp (default 200) and at least `--min-length` bp long (default 200) are measured. A telomere on the other strand (G-rich at a read start, or C-rich at a read end) is reported as `wrong_strand` and left out of the lengths: it can come from chimeric reads, interstitial repeats or basecalling artefacts.
+
+A telomere is `anchored` when the read has non-telomeric sequence inward of it, and no more telomeric repeat on the same strand further in. Only anchored telomeres are used for the length summary. Otherwise the read may start or end within the telomere, or the telomere may be interrupted (e.g. by telomeric retrotransposons in some insects), so the length is a lower bound.
+
+Lengths are summarised separately for G-rich and C-rich telomeres, as one strand can be basecalled much worse than the other (e.g. the G-rich strand in older ONT data). A warning is printed if one strand has under 10% of the telomeric reads. Two files are written:
+
+- `<output>.length.tsv`: every telomere found at a read end, with its strand, status, length and whether it is anchored.
+- `<output>.length.json`: the number of reads and the median, mean, 10th and 90th percentile and maximum of anchored lengths for each strand.
+
+Lengths have not yet been validated against telomere lengths measured by other methods, so treat them as estimates. The distributions can be wide and bimodal, so look at the per-read lengths rather than only the medians.
+
+```
+Measure telomere lengths from long reads (PacBio HiFi or ONT), using telomeres at read ends.
+
+Usage: tidk length [OPTIONS] --string <STRING> --output <OUTPUT> <FASTA>
+
+Arguments:
+  <FASTA>  The input reads, as fasta
+
+Options:
+  -s, --string <STRING>            The telomeric repeat unit, in any rotation or orientation. Find it with `tidk explore` if unknown.
+      --min-length [<MIN_LENGTH>]  Minimum telomere length to call, in bp [default: 200]
+      --max-offset [<MAX_OFFSET>]  Maximum distance of a telomere from the read end, in bp (e.g. for untrimmed adapters) [default: 200]
+      --exact                      Only count runs of exactly identical repeats. By default runs may contain sequencing errors (substitutions and indels).
+  -o, --output <OUTPUT>            Output filename prefix
+  -d, --dir [<DIR>]                Output directory to write files to [default: .]
+  -h, --help                       Print help
+  -V, --version                    Print version
 ```
 
 ### Find

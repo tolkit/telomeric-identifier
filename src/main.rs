@@ -1,7 +1,7 @@
 use anyhow::Result;
 use clap::{arg, builder::ArgPredicate, crate_version, value_parser, Arg, Command};
 use std::path::PathBuf;
-use tidk::{build, clades::get_clades, ends, explore, finder, plot, search, SubCommand};
+use tidk::{build, clades::get_clades, ends, explore, finder, length, plot, search, SubCommand};
 
 fn main() -> Result<()> {
     // command line options
@@ -167,6 +167,45 @@ fn main() -> Result<()> {
                 )
         )
         .subcommand(
+            Command::new("length")
+                .about("Measure telomere lengths from long reads (PacBio HiFi or ONT), using telomeres at read ends.")
+                .arg(
+                    Arg::new("fasta")
+                        .value_name("FASTA")
+                        .value_parser(value_parser!(PathBuf))
+                        .required(true)
+                        .help("The input reads, as fasta")
+                )
+                .arg(
+                    arg!(-s --string <STRING> "The telomeric repeat unit, in any rotation or orientation. Find it with `tidk explore` if unknown.")
+                        .required(true)
+                )
+                .arg(
+                    arg!(--"min-length" [MIN_LENGTH] "Minimum telomere length to call, in bp")
+                        .value_parser(value_parser!(usize))
+                        .default_value("200")
+                )
+                .arg(
+                    arg!(--"max-offset" [MAX_OFFSET] "Maximum distance of a telomere from the read end, in bp (e.g. for untrimmed adapters)")
+                        .value_parser(value_parser!(usize))
+                        .default_value("200")
+                )
+                .arg(
+                    arg!(--exact "Only count runs of exactly identical repeats. By default runs may contain sequencing errors (substitutions and indels).")
+                        .action(clap::ArgAction::SetTrue)
+                )
+                .arg(
+                    arg!(-o --output <OUTPUT> "Output filename prefix")
+                        .value_parser(value_parser!(PathBuf))
+                        .required(true)
+                )
+                .arg(
+                    arg!(-d --dir [DIR] "Output directory to write files to")
+                        .value_parser(value_parser!(PathBuf))
+                        .default_value(".")
+                )
+        )
+        .subcommand(
             Command::new("search")
                 .about("Search the input genome with a specific telomeric repeat search string.")
                 .arg(
@@ -255,6 +294,9 @@ fn main() -> Result<()> {
         }
         Some(("ends", matches)) => {
             ends::ends(matches)?;
+        }
+        Some(("length", matches)) => {
+            length::length(matches)?;
         }
         Some(("plot", matches)) => {
             plot::plot(matches)?;

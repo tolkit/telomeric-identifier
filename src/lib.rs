@@ -20,6 +20,8 @@ pub mod ends;
 pub mod explore;
 /// The entry point for the `tidk find` subcommand.
 pub mod finder;
+/// The entry point for the `tidk length` subcommand.
+pub mod length;
 /// Functions to plot output from `tidk search` and
 /// `tidk find`.
 pub mod plot;

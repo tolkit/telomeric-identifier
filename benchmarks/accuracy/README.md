@@ -34,8 +34,11 @@ exact runs with `--error-tolerant`, which became the default in 0.3.0 (`--exact`
 
 | | substitution | mixed (indels) |
 |---|---|---|
-| `AACCCT` top, exact | 16/21 | 16/21 |
+| `AACCCT` top, exact | 17/21 | 17/21 |
 | `AACCCT` top, tolerant | 21/21 | 21/21 |
-| Copies recovered, tolerant, 5% error | 98–100% | 95–100% |
-| Copies recovered, tolerant, 10% error | 93–100% | 71–78% |
+| Copies recovered, tolerant, 5% error | 100% | 96–100% |
+| Copies recovered, tolerant, 10% error | 99–100% | 74–81% |
 | Units reported, tolerant (max) | 1 | 4 |
+
+These results come from the two-way extension added with `tidk length`. Earlier, runs were only
+extended rightwards from their seed.

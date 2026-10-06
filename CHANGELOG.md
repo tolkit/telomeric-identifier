@@ -15,6 +15,9 @@
 
 ### Added
 
+- `tidk length`: measures telomere lengths from long reads, from telomeres at read ends. Lengths
+  are summarised separately for G-rich and C-rich telomeres, and only for reads that span the
+  whole telomere.
 - `tidk ends`: calls a telomere at both ends of each sequence (`present`, `wrong_strand`,
   `not_terminal` or `absent`) and reports which sequences are telomere-to-telomere, as TSV, BED
   and a JSON summary. The repeat unit is given with `--string`, or discovered from the sequence
@@ -36,6 +39,8 @@
   merged, so each telomere is counted once.
 - The final aggregation step in `tidk explore` is linear instead of quadratic in the number of
   candidate repeats.
+- Error-tolerant runs are extended both ways from their seed, so a repeat is measured the same
+  whichever strand it reads on.
 - Refactored how `tidk plot` groups records by sequence, and the removal of overlapping matches
   in `tidk search`/`tidk find`.
 

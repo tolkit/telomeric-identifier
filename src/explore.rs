@@ -407,6 +407,8 @@ fn tolerant_runs(sequence: &[u8], chunk_length: usize, id: &str) -> Vec<RepeatPo
     let x_drop = 2 * chunk_length as i64 + ROTATION_SWITCH_PENALTY;
 
     let mut runs = Vec::new();
+    // chunks before this belong to the previous run
+    let mut previous_end = 0;
     let mut i = 0;
     while i + 1 < chunks.len() {
         if chunks[i] != chunks[i + 1] {
@@ -418,41 +420,76 @@ fn tolerant_runs(sequence: &[u8], chunk_length: usize, id: &str) -> Vec<RepeatPo
             .map(|r| [&seed[r..], &seed[..r]].concat())
             .collect();
 
-        // the rotation each chunk matched, starting with the two seed chunks
-        let mut matched = vec![0, 0];
-        let mut score = 2 * chunk_length as i64;
-        let mut best = score;
-        let mut best_end = i + 2;
-        for (j, chunk) in chunks.iter().enumerate().skip(i + 2) {
-            let (r, chunk_score) = best_rotation(chunk, &rotations, *matched.last().unwrap());
-            matched.push(r);
-            score += chunk_score;
-            if score > best {
-                best = score;
-                best_end = j + 1;
-            }
-            if best - score > x_drop {
-                break;
-            }
-        }
-        matched.truncate(best_end - i);
+        // extend right from the seed, then left back to the previous run, so
+        // a run is found the same whichever way round the sequence reads
+        let (forward, end) = extend(&chunks, (i + 2..chunks.len()).collect(), &rotations, x_drop);
+        let (backward, start) = extend(
+            &chunks,
+            (previous_end..i).rev().collect(),
+            &rotations,
+            x_drop,
+        );
+        let start = start.unwrap_or(i);
+        let end = end.map_or(i + 2, |e| e + 1);
+
+        // the rotation each chunk matched, in order
+        let matched: Vec<usize> = backward
+            .into_iter()
+            .rev()
+            .chain([0, 0])
+            .chain(forward)
+            .collect();
 
         runs.push(RepeatPosition {
             id: id.to_string(),
-            start: i * chunk_length,
-            end: best_end * chunk_length,
-            sequence: consensus(&chunks[i..best_end], &matched),
+            start: start * chunk_length,
+            end: end * chunk_length,
+            sequence: consensus(&chunks[start..end], &matched, seed),
         });
-        i = best_end;
+        previous_end = end;
+        i = end;
     }
     runs
+}
+
+/// Extend a run from its seed over the chunks at `indices`, in order, until
+/// the score drops more than `x_drop` below its best. Returns the rotation
+/// each chunk up to the best point matched, and the index of the last chunk
+/// in the run (None if the run doesn't extend at all).
+fn extend(
+    chunks: &[&[u8]],
+    indices: Vec<usize>,
+    rotations: &[Vec<u8>],
+    x_drop: i64,
+) -> (Vec<usize>, Option<usize>) {
+    let mut matched = Vec::new();
+    let mut rotation = 0;
+    let mut score = 0;
+    let mut best = 0;
+    let mut best_len = 0;
+    for &j in &indices {
+        let (r, chunk_score) = best_rotation(chunks[j], rotations, rotation);
+        rotation = r;
+        matched.push(r);
+        score += chunk_score;
+        if score > best {
+            best = score;
+            best_len = matched.len();
+        }
+        if best - score > x_drop {
+            break;
+        }
+    }
+    matched.truncate(best_len);
+    let last = best_len.checked_sub(1).map(|n| indices[n]);
+    (matched, last)
 }
 
 /// The per position majority base across the chunks of a run, after undoing
 /// the rotation each chunk matched. A seed can itself carry an error (both
 /// seed chunks sharing it), so this, rather than the seed, labels the run.
-/// Ties go to the seed's base, as the first chunk always has rotation 0.
-fn consensus(chunks: &[&[u8]], rotations: &[usize]) -> String {
+/// Ties go to the seed's base.
+fn consensus(chunks: &[&[u8]], rotations: &[usize], seed: &[u8]) -> String {
     let k = chunks[0].len();
     let mut counts: Vec<HashMap<u8, usize>> = vec![HashMap::new(); k];
     for (chunk, &r) in chunks.iter().zip(rotations) {
@@ -465,7 +502,7 @@ fn consensus(chunks: &[&[u8]], rotations: &[usize]) -> String {
         .iter()
         .enumerate()
         .map(|(p, c)| {
-            let seed_base = chunks[0][p];
+            let seed_base = seed[p];
             let seed_count = c[&seed_base];
             let (&base, &count) = c.iter().max_by_key(|(_, &n)| n).unwrap();
             (if count > seed_count { base } else { seed_base }) as char
@@ -1024,7 +1061,7 @@ mod tests {
     #[test]
     fn test_consensus_undoes_rotation() {
         let chunks: Vec<&[u8]> = vec![b"TTAGGG", b"TTAGGG", b"AGGGTT", b"AGGGTT"];
-        assert_eq!(consensus(&chunks, &[0, 0, 2, 2]), "TTAGGG");
+        assert_eq!(consensus(&chunks, &[0, 0, 2, 2], b"TTAGGG"), "TTAGGG");
     }
 
     #[test]
@@ -1066,5 +1103,37 @@ mod tests {
         let res = get_telomeric_repeat_estimates(&mut positions).unwrap();
         assert_eq!(res[0].as_unit, None);
         assert_eq!(res[0].minor_strand_proportion(), None);
+    }
+
+    #[test]
+    fn test_tolerant_extends_both_ways() {
+        // errors throughout, so the first seed is not at the start of the run
+        let mut seq = "TTAGGG".repeat(100).into_bytes();
+        for i in (0..300).step_by(18) {
+            seq[i + 1] = b'C';
+        }
+        let seq = String::from_utf8(seq).unwrap();
+        let runs = tolerant(&seq, 6);
+        assert_eq!(runs.len(), 1);
+        assert_eq!((runs[0].start, runs[0].end), (0, 600));
+    }
+
+    #[test]
+    fn test_tolerant_is_symmetric() {
+        // the same telomere read either way round gives the same run length
+        let mut seq = format!("{}{}", random_seq(3000, 12), "TTAGGG".repeat(300)).into_bytes();
+        for i in (3000..4800).step_by(23) {
+            seq[i] = b'A';
+        }
+        let forward = String::from_utf8(seq).unwrap();
+        let reverse = crate::utils::reverse_complement(&forward);
+        let length = |s: &str| {
+            tolerant(s, 6)
+                .iter()
+                .map(|r| r.end - r.start)
+                .max()
+                .unwrap()
+        };
+        assert!(length(&forward).abs_diff(length(&reverse)) <= 12);
     }
 }

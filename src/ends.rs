@@ -15,17 +15,17 @@ const DISCOVERY_MINIMUM: usize = 5;
 const DISCOVERY_MAXIMUM: usize = 12;
 const DISCOVERY_THRESHOLD: usize = 20;
 // as in `tidk explore`, warn if the discovered unit is this strand biased
-const STRAND_BIAS_WARNING: f64 = 0.1;
+pub(crate) const STRAND_BIAS_WARNING: f64 = 0.1;
 
 /// Which end of a sequence.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Side {
+pub(crate) enum Side {
     Start,
     End,
 }
 
 impl Side {
-    fn name(&self) -> &'static str {
+    pub(crate) fn name(&self) -> &'static str {
         match self {
             Side::Start => "start",
             Side::End => "end",
@@ -45,7 +45,7 @@ impl Side {
 
 /// Which strand of the telomere reads along the sequence.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Strand {
+pub(crate) enum Strand {
     GRich,
     CRich,
     /// The unit has as many Cs as Gs, so there is no way to tell.
@@ -53,7 +53,7 @@ enum Strand {
 }
 
 impl Strand {
-    fn name(&self) -> &'static str {
+    pub(crate) fn name(&self) -> &'static str {
         match self {
             Strand::GRich => "G-rich",
             Strand::CRich => "C-rich",
@@ -64,7 +64,7 @@ impl Strand {
 
 /// The call for one end of a sequence.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Status {
+pub(crate) enum Status {
     Present,
     Absent,
     /// A telomere is present, but the wrong strand reads along the sequence.
@@ -77,7 +77,7 @@ enum Status {
 }
 
 impl Status {
-    fn name(&self) -> &'static str {
+    pub(crate) fn name(&self) -> &'static str {
         match self {
             Status::Present => "present",
             Status::Absent => "absent",
@@ -89,19 +89,19 @@ impl Status {
 
 /// A telomere found at one end of a sequence, in sequence coordinates.
 #[derive(Debug, PartialEq, Eq)]
-struct Telomere {
-    start: usize,
-    end: usize,
-    strand: Strand,
+pub(crate) struct Telomere {
+    pub(crate) start: usize,
+    pub(crate) end: usize,
+    pub(crate) strand: Strand,
     /// The telomere reaches the inner edge of the search window, so it may
     /// be longer than reported.
-    window_limited: bool,
+    pub(crate) window_limited: bool,
 }
 
 #[derive(Debug, PartialEq, Eq)]
-struct EndCall {
-    status: Status,
-    telomere: Option<Telomere>,
+pub(crate) struct EndCall {
+    pub(crate) status: Status,
+    pub(crate) telomere: Option<Telomere>,
 }
 
 /// Both end calls for a sequence.
@@ -130,12 +130,12 @@ struct EndWindows {
 }
 
 /// Settings for calling telomeres.
-struct EndsConfig {
+pub(crate) struct EndsConfig {
     /// The primitive canonical repeat unit.
-    unit: String,
-    min_length: usize,
-    max_offset: usize,
-    error_tolerant: bool,
+    pub(crate) unit: String,
+    pub(crate) min_length: usize,
+    pub(crate) max_offset: usize,
+    pub(crate) error_tolerant: bool,
 }
 
 /// The entry point for `tidk ends`.
@@ -189,13 +189,7 @@ pub fn ends(matches: &clap::ArgMatches) -> Result<()> {
     }
 
     let unit = match string {
-        Some(s) => {
-            let s = s.to_ascii_uppercase();
-            if s.is_empty() || !s.bytes().all(|b| b"ACGT".contains(&b)) {
-                bail!("--string must only contain A, C, G and T, but was {s}.");
-            }
-            utils::primitive_telomere_unit(&s)
-        }
+        Some(s) => parse_unit(s)?,
         None => discover_unit(&records, error_tolerant)?,
     };
     eprintln!(
@@ -229,6 +223,15 @@ pub fn ends(matches: &clap::ArgMatches) -> Result<()> {
     print_summary(&calls);
 
     Ok(())
+}
+
+/// The primitive canonical unit of a repeat given on the command line.
+pub(crate) fn parse_unit(string: &str) -> Result<String> {
+    let s = string.to_ascii_uppercase();
+    if s.is_empty() || !s.bytes().all(|b| b"ACGT".contains(&b)) {
+        bail!("--string must only contain A, C, G and T, but was {s}.");
+    }
+    Ok(utils::primitive_telomere_unit(&s))
 }
 
 /// Find the most abundant candidate telomeric repeat unit in the end windows.
@@ -290,10 +293,13 @@ fn run_strand(orientation: Orientation, unit_strand: Strand) -> Strand {
     }
 }
 
+/// A stretch of telomeric repeat: (start, end, strand).
+pub(crate) type Block = (usize, usize, Strand);
+
 /// Runs of the unit in a window, merged where they are less than
 /// [`MERGE_GAP`] apart, as (start, end, strand) sorted by start. A block's
 /// strand is the one covering most of it.
-fn telomere_blocks(window: &[u8], config: &EndsConfig) -> Vec<(usize, usize, Strand)> {
+pub(crate) fn telomere_blocks(window: &[u8], config: &EndsConfig) -> Vec<Block> {
     let unit_strand = unit_strand(&config.unit);
     let mut runs: Vec<(usize, usize, Strand)> =
         explore::find_runs(window, config.unit.len(), "", config.error_tolerant)
@@ -338,15 +344,6 @@ fn telomere_blocks(window: &[u8], config: &EndsConfig) -> Vec<(usize, usize, Str
 /// Call the telomere at one end of a sequence, from the window at that end.
 /// `window_start` is the position of the window in the sequence.
 fn call_end(window: &[u8], side: Side, window_start: usize, config: &EndsConfig) -> EndCall {
-    let absent = EndCall {
-        status: Status::Absent,
-        telomere: None,
-    };
-    // distance of a block from the end of the sequence it should be at
-    let offset = |&(start, end, _): &(usize, usize, Strand)| match side {
-        Side::Start => start,
-        Side::End => window.len() - end,
-    };
     // runs are found in chunks of the unit length from the start of the
     // window, so at the end side, trim the window so chunks finish exactly
     // at the sequence end
@@ -354,11 +351,32 @@ fn call_end(window: &[u8], side: Side, window_start: usize, config: &EndsConfig)
         Side::Start => 0,
         Side::End => window.len() % config.unit.len(),
     };
-    let on_expected_strand =
-        |strand: Strand| strand == Strand::Unknown || strand == side.expected_strand();
-    let blocks: Vec<_> = telomere_blocks(&window[trim..], config)
+    let blocks: Vec<Block> = telomere_blocks(&window[trim..], config)
         .into_iter()
         .map(|(start, end, strand)| (start + trim, end + trim, strand))
+        .collect();
+    classify_end(&blocks, window.len(), side, window_start, config)
+}
+
+/// Call the telomere at one end of a sequence from the telomeric blocks in a
+/// window of `window_len` bp at that end, which starts at `window_start` in
+/// the sequence.
+pub(crate) fn classify_end(
+    blocks: &[Block],
+    window_len: usize,
+    side: Side,
+    window_start: usize,
+    config: &EndsConfig,
+) -> EndCall {
+    // distance of a block from the end of the sequence it should be at
+    let offset = |&(start, end, _): &Block| match side {
+        Side::Start => start,
+        Side::End => window_len - end,
+    };
+    let on_expected_strand =
+        |strand: Strand| strand == Strand::Unknown || strand == side.expected_strand();
+    let blocks: Vec<_> = blocks
+        .iter()
         .filter(|b| b.1 - b.0 >= config.min_length)
         .collect();
     // the longest block close enough to the end, else the closest block on
@@ -368,7 +386,7 @@ fn call_end(window: &[u8], side: Side, window_start: usize, config: &EndsConfig)
         .iter()
         .filter(|b| offset(b) <= config.max_offset)
         .max_by_key(|b| b.1 - b.0);
-    let (status, &(start, end, strand)) = match terminal {
+    let (status, &&(start, end, strand)) = match terminal {
         Some(b) if on_expected_strand(b.2) => (Status::Present, b),
         Some(b) => (Status::WrongStrand, b),
         None => match blocks
@@ -377,12 +395,17 @@ fn call_end(window: &[u8], side: Side, window_start: usize, config: &EndsConfig)
             .min_by_key(|b| offset(b))
         {
             Some(b) => (Status::NotTerminal, b),
-            None => return absent,
+            None => {
+                return EndCall {
+                    status: Status::Absent,
+                    telomere: None,
+                }
+            }
         },
     };
 
     let window_limited = match side {
-        Side::Start => end + MERGE_GAP >= window.len(),
+        Side::Start => end + MERGE_GAP >= window_len,
         Side::End => start <= MERGE_GAP,
     };
     EndCall {
