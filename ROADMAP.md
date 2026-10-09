@@ -46,9 +46,13 @@ work; they feed the methods of the phase 4 comparative paper.
 
 ## Phase 4: comparative telomere evolution paper
 
-- [ ] Run tidk over all chromosome-level Tree of Life / ERGA / EBP assemblies (thousands, not the original 500)
-- [ ] Map repeat-unit transitions onto a phylogeny: frequency, clades, rates
+- [x] Run tidk over all Darwin Tree of Life assemblies: 3,422 species (2026-10-08; `/lustre/scratch122/tol/teams/blaxter/users/mb39/tol_telomeres`). A telomere call at ≥25% of chromosome ends in 2,292 species, after also checking known telomeric units at the ends (the top 5 explore units alone missed telomeres ranked just below them). Merged into `a-telomeric-repeat-database` (branch `tidk-0.3`) with NCBI taxonomy. ERGA / EBP still to add
+- [ ] Map repeat-unit transitions onto a phylogeny: frequency, clades, rates. About 30 independent animal shifts with ≥2 species (e.g. bees/crabronids AACCCAGACCT, Hemiptera AACCATCCCT, bryozoans AAACCCC)
 - [ ] **Plants:** pair repeat units with existing telomerase RNA (TR) and TERT data to test whether TR template changes explain repeat transitions
+- [x] **TERT in the shift lineages** (`tol_telomeres/shifts`): found in 196/198 shift species and 105/108 controls, so shifts are telomerase products; absent from Diptera (0/6, expected) and spiders (0/6, with no telomere at any end: telomerase loss)
+- [x] **TR templates validate the telomere calls**: where a TR is found (Hymenoptera models from Fajkus et al. 2023, Lepidoptera models from their Table S4, Rfam vertebrate CM), its template encodes the tidk repeat in 1,087/1,096 strongly called species; most exceptions are tidk miscalls
+- [ ] TR in the remaining shift lineages: model walking (Hymenoptera 109 → 146/188), covariance models, synteny and template co-variation (within *Bombus* it finds the published TR blind, rank 1 of 2)
+- [ ] **Neat result: TR genes move in Hymenoptera but not in Lepidoptera.** Projecting a known TR's flanks (nucleotide or BUSCO-gene anchors) into a relative finds the relative's TR in place across Lepidoptera from genus to superfamily (7/9 pairs) and across core sawfly families, but between pimpline genera, crabronid subfamilies, *Tenthredo*/*Euura* and *Cephus*/*Urocerus* the orthologous interval is conserved and empty, with the TR on another chromosome. TR relocation (retroposition?) looks frequent in Hymenoptera. To do: a systematic TR-synteny survey to put numbers on it, and look for the mechanism (TR-derived retrocopies, flanking repeats)
 - [ ] Interstitial telomeric sequences as markers of chromosome fusion and karyotype evolution
-- [ ] Survey taxa that lack canonical telomeres
+- [ ] Survey taxa that lack canonical telomeres (started: Diptera, spiders, mayflies)
 - [ ] Target journal: MBE, Genome Research or PNAS, with tidk v1.0 released alongside
