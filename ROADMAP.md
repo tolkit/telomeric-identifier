@@ -46,11 +46,18 @@ work; they feed the methods of the phase 4 comparative paper.
 
 ## Phase 4: comparative telomere evolution paper
 
-Code and data: the tidk run is `tol_run/` in `a-telomeric-repeat-database`
-(merged to `main`); the TERT/TR work is `tol/` in `tr_tert`
-(ARU-life-sciences/tr_tert, renamed from tr_tert_plants: its plant
-question is answered). Both were consolidated from `tol_telomeres`
-(2026-10-10; on-disk outputs move once the running ToL TR round ends).
+How the repositories fit together:
+
+| repository | role in phase 4 |
+|---|---|
+| this one (tidk) | the tool; this roadmap is the project plan |
+| [tolkit/a-telomeric-repeat-database](https://github.com/tolkit/a-telomeric-repeat-database) | telomere calls for every DToL species; `tol_run/` runs tidk over all assemblies |
+| [ARU-life-sciences/tr_tert](https://github.com/ARU-life-sciences/tr_tert) (renamed from `tr_tert_plants`: its plant question is answered) | telomerase: the plant pipeline (top level), `tol/` (TERT and TR across the tree, built on the database's calls), `santalales/` (mistletoe request) |
+
+Flow: tidk → `tol_run/` (calls) → `tr_tert/tol/` (TERT, TR templates against
+the calls) → the paper. Both `tol_run/` and `tol/` were consolidated from the
+`tol_telomeres` workspace (2026-10-10; its on-disk outputs move once the
+running ToL TR round ends).
 
 ### Telomeric repeats across the tree
 
