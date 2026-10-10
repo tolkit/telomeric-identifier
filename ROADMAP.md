@@ -59,6 +59,10 @@ the calls) → the paper. Both `tol_run/` and `tol/` were consolidated from the
 `tol_telomeres` workspace (2026-10-10; its on-disk outputs move once the
 running ToL TR round ends).
 
+**Paper plan:** the outline anchoring the paper (thesis, sections, numbers so far,
+to-dos) is `tol/notes/paper_outline.md` in tr_tert, with the literature behind it in
+`tol/notes/literature_synthesis.md`.
+
 ### Telomeric repeats across the tree
 
 - [x] tidk over all Darwin Tree of Life assemblies: 3,422 species (2026-10-08). A telomere call at ≥25% of chromosome ends in 2,292, after also checking 28 known telomeric units at the ends (the top 5 explore units alone missed telomeres ranked just below them). In `a-telomeric-repeat-database` with NCBI taxonomy
