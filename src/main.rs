@@ -198,6 +198,19 @@ fn main() -> Result<()> {
                     arg!(--exclude [REGEX] "Skip sequences whose ID matches this regular expression (e.g. 'unloc')")
                 )
                 .arg(
+                    Arg::new("reads")
+                        .long("reads")
+                        .value_name("READS")
+                        .num_args(1..)
+                        .value_parser(value_parser!(PathBuf))
+                        .help("Long reads (HiFi or ONT, fasta, may be gzipped) from the same individual: do reads run past each assembly end, and what tandem repeat do the overhangs carry?")
+                )
+                .arg(
+                    arg!(--bait [BAIT] "With --reads, length of each end used to anchor reads, in bp")
+                        .value_parser(value_parser!(usize))
+                        .default_value("30000")
+                )
+                .arg(
                     arg!(--"max-period" [MAX_PERIOD] "Longest tandem repeat period to look for, in bp")
                         .value_parser(value_parser!(usize))
                         .default_value("2000")

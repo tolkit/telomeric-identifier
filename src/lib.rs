@@ -9,6 +9,8 @@ use std::{
     path::{Path, PathBuf},
 };
 
+/// Anchoring long reads to chromosome ends, for `tidk caps --reads`.
+pub(crate) mod anchor;
 /// For building the database
 pub mod build;
 /// The entry point for the `tidk caps` subcommand.

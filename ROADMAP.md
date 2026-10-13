@@ -67,11 +67,13 @@ TSV per chromosome end, a species summary and JSON. Sections:
 
   Built-in tandem finder (k-mer lags, periods 1 bp–2 kb, tolerant of divergent copies). Families compare consensus and repeated k-mers; with a unit, arrays ≥ 30% unit k-mers form one telomeric family (variant-rich plant telomeres). `--include`/`--exclude` regexes choose chromosomes (ToL: `'^SUPER_'`, `unloc`).
   Validation against the D2 TRF scripts on 600 species (same chromosomes): same class in 133/149 controls and 404/451 losses; telomere top at ends in 130/149 controls (scripts 132/150). Most disagreements sit at the 50% end-fraction threshold with the same period. Three interior windows per chromosome (scripts: one) catch satellites that are also interior (e.g. *Atherix*). 2–30 s and < 1 GB per assembly
-- [ ] **Is the end real?** (`--reads`):
+- [x] **Is the end real?** (`--reads`, `src/anchor.rs`):
   - map reads to the terminal ~50 kb (minimap2 crate or a k-mer anchor; reuse the `length.rs` anchoring);
   - per end: tip reads, reads running ≥ 1 kb past the tip, median overhang, open/mixed/closed;
   - the top tandem family in the overhangs, counted per end. Pooled reads mislead: one collapsed array gave 13,220 of 14,230 *Anyphaena* overhang reads;
-  - flag ends with N gaps or low coverage near the tip.
+  - [ ] flag ends with N gaps or low coverage near the tip.
+
+  Done with a k-mer anchor rather than minimap2, so tidk stays a pure Rust binary. 25-mers unique across the terminal 30 kb of all ends are looked up at every 8th read position, and a consistent diagonal places the read; the tip is extrapolated from the anchor nearest it. Overhangs (≥ 1 kb, up to 50 per end) go through the same tandem finder and families as the windows. On the 14 D3 species, the end states match `end_reads.py`. Lepidoptera overhangs fall in the telomeric family at 8–20 open ends (5–6 with the per-end script). Spider overhangs are 0–9% tandem, with 7–25 families across open ends. *Palloptera* overhangs are its 1,015 bp satellite. 10–13 min and < 200 MB per species (2 HiFi files, 8 threads)
 - [ ] **Shared non-tandem sequence** at ends (e.g. *Drosophila* HeT-A/TART arrays): end windows aligned to each other with tandem repeats masked, vs interior; head-to-tail orientation bias.
 - [ ] Later: classify end-enriched families with rep (satellite vs TRAS/SART/HeT-A-type TE vs unknown); this also covers the interrupted Lepidoptera telomeres (phase 3).
 - [ ] **Validation set:** the D2/D3 species. Controls should come out `telomeric` (132/150 with the scripts); Diptera `terminal_satellite` (154/402); spiders open ends with non-telomeric overhangs (8/8); *Drosophila* shared non-tandem.

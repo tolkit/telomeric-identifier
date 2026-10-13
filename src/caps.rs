@@ -18,6 +18,7 @@
 //! (median) and is >= 2x as frequent at ends as in the interior; otherwise
 //! `none`.
 
+use crate::anchor::{self, Baits};
 use crate::ends::{self, EndsConfig, Side, Status};
 use crate::tandem::{self, Array, FAMILY_K};
 use crate::{explore, open_fasta_reader, utils};
@@ -45,6 +46,14 @@ const CAP_ENRICHMENT: f64 = 2.0;
 /// Telomere calls: minimum length and offset from the tip, as in `tidk ends`.
 const TELOMERE_MIN_LENGTH: usize = 200;
 const TELOMERE_MAX_OFFSET: usize = 1000;
+/// Reads overhanging the tip by at least this many bp continue the chromosome.
+const MIN_OVERHANG: usize = 1000;
+/// An end needs this many tip reads for a call.
+const MIN_TIP_READS: usize = 3;
+/// Overhangs analysed for tandem repeats per end.
+const OVERHANGS_PER_END: usize = 50;
+/// An overhang's top family must cover this fraction of it.
+const OVERHANG_MIN_COVER: f64 = 0.2;
 // unit discovery at the ends, as in `tidk ends`
 const DISCOVERY_MINIMUM: usize = 5;
 const DISCOVERY_MAXIMUM: usize = 12;
@@ -143,8 +152,17 @@ pub fn caps(matches: &clap::ArgMatches) -> Result<()> {
     let include = pattern("include")?;
     let exclude = pattern("exclude")?;
 
-    // windows; telomeres are called later, once the unit is known
+    let reads: Vec<PathBuf> = matches
+        .get_many::<PathBuf>("reads")
+        .map(|r| r.cloned().collect())
+        .unwrap_or_default();
+    let bait = *matches.get_one::<usize>("bait").expect("defaulted by clap");
+
+    // windows; telomeres are called later, once the unit is known. With
+    // reads, also the terminal `bait` bp of each end, from the tip inwards,
+    // in the order of the end windows.
     let mut windows = Vec::new();
+    let mut baits: Vec<Vec<u8>> = Vec::new();
     for result in open_fasta_reader(input_fasta)?.records() {
         let record = result?;
         let id = record.id().to_owned();
@@ -169,6 +187,11 @@ pub fn caps(matches: &clap::ArgMatches) -> Result<()> {
         };
         push(Kind::Start, 0, seq[..window].to_vec());
         push(Kind::End, len - window, seq[len - window..].to_vec());
+        if !reads.is_empty() {
+            let b = bait.min(len / 2);
+            baits.push(seq[..b].to_vec());
+            baits.push(anchor::revcomp(&seq[len - b..]));
+        }
         if len >= (n_interior + 2) * window {
             for i in 1..=n_interior {
                 let mid = len * i / (n_interior + 1);
@@ -223,15 +246,29 @@ pub fn caps(matches: &clap::ArgMatches) -> Result<()> {
         windows.len() - n_ends
     );
 
-    let (results, families, summary) = analyse(&windows, unit.as_deref(), max_period);
+    let (results, mut builder, summary) = analyse(&windows, unit.as_deref(), max_period);
 
     create_dir_all(outdir)?;
     let prefix = format!("{}/{}", outdir.display(), output.display());
-    write_windows(&windows, &results, &families, &format!("{prefix}.caps.tsv"))?;
+    let reads_summary = if reads.is_empty() {
+        serde_json::Value::Null
+    } else {
+        let ends: Vec<&Window> = windows.iter().filter(|w| w.kind.is_end()).collect();
+        let per_end = end_reads(&reads, &baits, &ends, &mut builder, max_period, &prefix)?;
+        let s = summarise_reads(&per_end, &builder.families);
+        eprintln!(
+            "[+]	Reads: {} ends open, {} mixed, {} closed, {} without reads. Commonest overhang family: {} ({} bp period), top at {} open ends",
+            s["open"], s["mixed"], s["closed"], s["no_reads"],
+            s["overhang_family_consensus_short"], s["overhang_family_period"], s["overhang_family_open_ends"]
+        );
+        s
+    };
+    let families = &builder.families;
+    write_windows(&windows, &results, families, &format!("{prefix}.caps.tsv"))?;
     write_families(
         &windows,
         &results,
-        &families,
+        families,
         &format!("{prefix}.caps.families.tsv"),
     )?;
     let json = serde_json::json!({
@@ -244,6 +281,7 @@ pub fn caps(matches: &clap::ArgMatches) -> Result<()> {
         "sequences": windows.iter().filter(|w| w.kind == Kind::Start).count(),
         "telomeres": telomere_counts(&windows),
         "summary": summary,
+        "reads": reads_summary,
     });
     let mut f = File::create(format!("{prefix}.caps.json"))?;
     serde_json::to_writer_pretty(&mut f, &json)?;
@@ -261,53 +299,230 @@ pub fn caps(matches: &clap::ArgMatches) -> Result<()> {
     Ok(())
 }
 
+/// What the reads say about one end.
+struct EndReads {
+    id: String,
+    kind: Kind,
+    tip_reads: usize,
+    overhang_reads: usize,
+    median_overhang: Option<i64>,
+    state: &'static str,
+    first_anchor: Option<usize>,
+    /// Overhangs analysed, their median tandem cover, and the family top in
+    /// most of them (with how many).
+    analysed: usize,
+    tandem_cover: Option<f64>,
+    family: Option<(usize, usize)>,
+}
+
+/// Anchor reads to the ends, call each end, and find the tandem repeat
+/// families of the overhangs (added to `builder`). Kept overhangs are
+/// written to `{prefix}.caps.overhang.fa`, and per end results to
+/// `{prefix}.caps.reads.tsv`.
+fn end_reads(
+    reads: &[PathBuf],
+    baits: &[Vec<u8>],
+    ends: &[&Window],
+    builder: &mut FamilyBuilder,
+    max_period: usize,
+    prefix: &str,
+) -> Result<Vec<EndReads>> {
+    let index = Baits::new(&baits.iter().map(|b| b.as_slice()).collect::<Vec<_>>());
+    eprintln!("[+]	Anchoring reads to {} ends", baits.len());
+    let mut overhangs: Vec<Vec<i64>> = vec![Vec::new(); baits.len()];
+    let mut kept: Vec<Vec<(String, Vec<u8>)>> = vec![Vec::new(); baits.len()];
+    let mut n_reads = 0usize;
+    for path in reads {
+        let hits: Vec<(String, anchor::Hit)> = open_fasta_reader(path)?
+            .records()
+            .par_bridge()
+            .filter_map(|r| {
+                let r = r.ok()?;
+                index
+                    .anchor(r.seq(), MIN_OVERHANG)
+                    .map(|h| (r.id().to_owned(), h))
+            })
+            .collect();
+        n_reads += hits.len();
+        for (id, h) in hits {
+            overhangs[h.end].push(h.overhang);
+            if let Some(s) = h.sequence {
+                if kept[h.end].len() < OVERHANGS_PER_END {
+                    kept[h.end].push((id, s));
+                }
+            }
+        }
+    }
+    eprintln!("[+]	{n_reads} reads cover a tip");
+
+    // tandem repeats in the kept overhangs, in the same families as the windows
+    let flat: Vec<(usize, &[u8])> = kept
+        .iter()
+        .enumerate()
+        .flat_map(|(e, k)| k.iter().map(move |(_, s)| (e, s.as_slice())))
+        .collect();
+    let arrays: Vec<Vec<Array>> = flat
+        .par_iter()
+        .map(|(_, s)| tandem::find_arrays(s, max_period))
+        .collect();
+    let seqs: Vec<&[u8]> = flat.iter().map(|(_, s)| *s).collect();
+    let assignment = builder.assign_all(&arrays, &seqs);
+    let mut tops: Vec<Vec<(Option<usize>, f64)>> = vec![Vec::new(); baits.len()];
+    for ((arrays, fams), (e, s)) in arrays.into_iter().zip(assignment).zip(&flat) {
+        let r = window_result(arrays, fams, s.len(), &builder.families);
+        let top = r
+            .top
+            .filter(|t| t.cover >= OVERHANG_MIN_COVER)
+            .map(|t| t.family);
+        tops[*e].push((top, r.tandem_cover));
+    }
+
+    let mut fa = LineWriter::new(File::create(format!("{prefix}.caps.overhang.fa"))?);
+    for (e, k) in kept.iter().enumerate() {
+        for (id, s) in k {
+            writeln!(
+                fa,
+                ">{id} {}:{} overhang={}",
+                ends[e].id,
+                ends[e].kind.name(),
+                s.len()
+            )?;
+            fa.write_all(s)?;
+            writeln!(fa)?;
+        }
+    }
+
+    let per_end: Vec<EndReads> = (0..baits.len())
+        .map(|e| {
+            let ov = &mut overhangs[e];
+            ov.sort_unstable();
+            let n_over = ov.iter().filter(|&&o| o >= MIN_OVERHANG as i64).count();
+            let state = if ov.len() < MIN_TIP_READS {
+                "no_reads"
+            } else if 2 * n_over >= ov.len() {
+                "open"
+            } else if 10 * n_over <= ov.len() {
+                "closed"
+            } else {
+                "mixed"
+            };
+            let mut counts: HashMap<usize, usize> = HashMap::new();
+            for f in tops[e].iter().filter_map(|t| t.0) {
+                *counts.entry(f).or_default() += 1;
+            }
+            EndReads {
+                id: ends[e].id.clone(),
+                kind: ends[e].kind,
+                tip_reads: ov.len(),
+                overhang_reads: n_over,
+                median_overhang: (!ov.is_empty()).then(|| ov[ov.len() / 2]),
+                state,
+                first_anchor: index.first_anchor[e],
+                analysed: tops[e].len(),
+                tandem_cover: (!tops[e].is_empty())
+                    .then(|| median(tops[e].iter().map(|t| t.1).collect())),
+                family: counts
+                    .into_iter()
+                    .max_by_key(|&(f, n)| (n, std::cmp::Reverse(f))),
+            }
+        })
+        .collect();
+
+    let mut f = LineWriter::new(File::create(format!("{prefix}.caps.reads.tsv"))?);
+    writeln!(
+        f,
+        "id\tside\ttip_reads\toverhang_reads\tmedian_overhang\tstate\tfirst_anchor\toverhangs_analysed\toverhang_tandem_cover\toverhang_family\toverhang_family_reads\toverhang_family_period\toverhang_family_telomeric\toverhang_family_consensus"
+    )?;
+    let na = |x: Option<String>| x.unwrap_or_else(|| "NA".into());
+    for r in &per_end {
+        let fam = match r.family {
+            Some((fam, n)) => {
+                let x = &builder.families[fam];
+                format!(
+                    "{fam}\t{n}\t{}\t{}\t{}",
+                    x.period,
+                    x.telomeric,
+                    x.consensus.chars().take(200).collect::<String>()
+                )
+            }
+            None => "NA\t0\tNA\tNA\tNA".into(),
+        };
+        writeln!(
+            f,
+            "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{fam}",
+            r.id,
+            r.kind.name(),
+            r.tip_reads,
+            r.overhang_reads,
+            na(r.median_overhang.map(|m| m.to_string())),
+            r.state,
+            na(r.first_anchor.map(|m| m.to_string())),
+            r.analysed,
+            na(r.tandem_cover.map(|c| format!("{c:.3}"))),
+        )?;
+    }
+    eprintln!("[+]	Written {prefix}.caps.reads.tsv and .caps.overhang.fa");
+    Ok(per_end)
+}
+
+/// End states, and the overhang family top at most open ends: the repeat
+/// beyond the assembly ends (the telomere in assemblies that trimmed it).
+fn summarise_reads(per_end: &[EndReads], families: &[Family]) -> serde_json::Value {
+    let count = |s: &str| per_end.iter().filter(|r| r.state == s).count();
+    let open: Vec<&EndReads> = per_end.iter().filter(|r| r.state == "open").collect();
+    let mut counts: HashMap<usize, usize> = HashMap::new();
+    for r in &open {
+        if let Some((f, _)) = r.family {
+            *counts.entry(f).or_default() += 1;
+        }
+    }
+    let top = counts
+        .into_iter()
+        .max_by_key(|&(f, n)| (n, std::cmp::Reverse(f)));
+    let covers: Vec<f64> = open.iter().filter_map(|r| r.tandem_cover).collect();
+    let consensus = top
+        .map(|(f, _)| families[f].consensus.clone())
+        .unwrap_or_default();
+    serde_json::json!({
+        "ends": per_end.len(),
+        "open": open.len(),
+        "mixed": count("mixed"),
+        "closed": count("closed"),
+        "no_reads": count("no_reads"),
+        "open_median_overhang": median(open.iter().filter_map(|r| r.median_overhang.map(|m| m as f64)).collect()),
+        "open_overhang_tandem_cover_median": if covers.is_empty() { serde_json::Value::Null } else { median(covers).into() },
+        "overhang_family": top.map(|(f, _)| f),
+        "overhang_family_open_ends": top.map(|(_, n)| n).unwrap_or(0),
+        "overhang_family_families_at_open_ends": open.iter().filter_map(|r| r.family.map(|f| f.0)).collect::<HashSet<_>>().len(),
+        "overhang_family_period": top.map(|(f, _)| families[f].period).unwrap_or(0),
+        "overhang_family_telomeric": top.map(|(f, _)| families[f].telomeric),
+        "overhang_family_consensus": consensus,
+        "overhang_family_consensus_short": consensus.chars().take(40).collect::<String>(),
+    })
+}
+
 /// Tandem arrays, families and the end-enrichment summary for a set of
 /// windows (end windows read from the tip inwards).
 fn analyse(
     windows: &[Window],
     unit: Option<&str>,
     max_period: usize,
-) -> (Vec<WindowResult>, Vec<Family>, serde_json::Value) {
+) -> (Vec<WindowResult>, FamilyBuilder, serde_json::Value) {
     let arrays: Vec<Vec<Array>> = windows
         .par_iter()
         .map(|w| tandem::find_arrays(&w.seq, max_period))
         .collect();
-    let unit_kmers: HashSet<u32> = unit
-        .map(|u| {
-            tandem::unit_kmers(u)
-                .into_iter()
-                .map(|c| tandem::canonical_code(c, FAMILY_K))
-                .collect()
-        })
-        .unwrap_or_default();
-    // arrays mostly made of the unit's k-mers, variants and all
-    let telomeric: Vec<Vec<bool>> = arrays
-        .iter()
-        .zip(windows)
-        .map(|(arrays, w)| {
-            arrays
-                .iter()
-                .map(|a| {
-                    let codes = tandem::kmer_codes(&w.seq[a.start..a.end], FAMILY_K);
-                    let hits = codes
-                        .iter()
-                        .flatten()
-                        .filter(|&&c| unit_kmers.contains(&tandem::canonical_code(c, FAMILY_K)))
-                        .count();
-                    !codes.is_empty() && hits as f64 >= TELOMERIC_COVER * codes.len() as f64
-                })
-                .collect()
-        })
-        .collect();
-    let (families, assignment) = assign_families(&arrays, &telomeric, unit);
+    let mut builder = FamilyBuilder::new(unit);
+    let seqs: Vec<&[u8]> = windows.iter().map(|w| w.seq.as_slice()).collect();
+    let assignment = builder.assign_all(&arrays, &seqs);
     let results: Vec<WindowResult> = arrays
         .into_iter()
         .zip(assignment)
         .zip(windows)
-        .map(|((arrays, fams), w)| window_result(arrays, fams, w.seq.len(), &families))
+        .map(|((arrays, fams), w)| window_result(arrays, fams, w.seq.len(), &builder.families))
         .collect();
-    let summary = summarise(windows, &results, &families);
-    (results, families, summary)
+    let summary = summarise(windows, &results, &builder.families);
+    (results, builder, summary)
 }
 
 fn revcomp(seq: &[u8]) -> Vec<u8> {
@@ -340,57 +555,57 @@ fn discover_unit(windows: &[Window]) -> Result<Option<String>> {
     .map(|(u, _)| u))
 }
 
-/// Group all arrays into families, largest arrays first, so each family is
-/// represented by its largest array. Returns the families and, per window,
-/// the family of each array.
-fn assign_families(
-    arrays: &[Vec<Array>],
-    telomeric: &[Vec<bool>],
-    unit: Option<&str>,
-) -> (Vec<Family>, Vec<Vec<usize>>) {
-    let mut order: Vec<(usize, usize)> = arrays
-        .iter()
-        .enumerate()
-        .flat_map(|(w, a)| (0..a.len()).map(move |i| (w, i)))
-        .collect();
-    order.sort_unstable_by_key(|&(w, i)| (std::cmp::Reverse(arrays[w][i].len()), w, i));
+/// Families of tandem arrays, built up array by array.
+struct FamilyBuilder {
+    families: Vec<Family>,
+    /// Canonical consensus k-mers to families.
+    index: HashMap<u32, Vec<usize>>,
+    /// Canonical repeated k-mers to families.
+    index_repeated: HashMap<u32, Vec<usize>>,
+    unit_kmers: HashSet<u32>,
+}
 
-    let canonical = |set: &HashSet<u32>| -> HashSet<u32> {
-        set.iter()
-            .map(|&c| tandem::canonical_code(c, FAMILY_K))
-            .collect()
-    };
-    // Jaccard similarity to each family sharing any k-mer, via an index
-    let similar = |set: &HashSet<u32>,
-                   index: &HashMap<u32, Vec<usize>>,
-                   size: &dyn Fn(usize) -> usize|
-     -> HashMap<usize, f64> {
-        let mut shared: HashMap<usize, usize> = HashMap::new();
-        for c in set {
-            for &f in index.get(c).into_iter().flatten() {
-                *shared.entry(f).or_default() += 1;
-            }
+fn canonical(set: &HashSet<u32>) -> HashSet<u32> {
+    set.iter()
+        .map(|&c| tandem::canonical_code(c, FAMILY_K))
+        .collect()
+}
+
+/// Jaccard similarity of a k-mer set to each family sharing any k-mer.
+fn similar(
+    set: &HashSet<u32>,
+    index: &HashMap<u32, Vec<usize>>,
+    size: impl Fn(usize) -> usize,
+) -> HashMap<usize, f64> {
+    let mut shared: HashMap<usize, usize> = HashMap::new();
+    for c in set {
+        for &f in index.get(c).into_iter().flatten() {
+            *shared.entry(f).or_default() += 1;
         }
-        shared
-            .into_iter()
-            .map(|(f, s)| (f, s as f64 / (set.len() + size(f) - s) as f64))
-            .collect()
-    };
+    }
+    shared
+        .into_iter()
+        .map(|(f, s)| (f, s as f64 / (set.len() + size(f) - s) as f64))
+        .collect()
+}
 
-    let mut families: Vec<Family> = Vec::new();
-    let mut index: HashMap<u32, Vec<usize>> = HashMap::new();
-    let mut index_repeated: HashMap<u32, Vec<usize>> = HashMap::new();
-    let mut assignment: Vec<Vec<usize>> = arrays.iter().map(|a| vec![0; a.len()]).collect();
-    // with a unit, family 0 is the telomere, holding every telomeric array
-    let unit_kmers: HashSet<u32> = match unit {
-        Some(u) => {
+impl FamilyBuilder {
+    /// With a unit, family 0 is the telomere.
+    fn new(unit: Option<&str>) -> Self {
+        let mut b = FamilyBuilder {
+            families: Vec::new(),
+            index: HashMap::new(),
+            index_repeated: HashMap::new(),
+            unit_kmers: HashSet::new(),
+        };
+        if let Some(u) = unit {
             let forward = tandem::unit_kmers(u);
             let canon = canonical(&forward);
             for &c in &canon {
-                index.entry(c).or_default().push(0);
-                index_repeated.entry(c).or_default().push(0);
+                b.index.entry(c).or_default().push(0);
+                b.index_repeated.entry(c).or_default().push(0);
             }
-            families.push(Family {
+            b.families.push(Family {
                 period: u.len(),
                 consensus: u.to_string(),
                 kmers: canon.clone(),
@@ -398,55 +613,88 @@ fn assign_families(
                 forward,
                 telomeric: true,
             });
-            canon
+            b.unit_kmers = canon;
         }
-        None => HashSet::new(),
-    };
-    for (w, i) in order {
-        let a = &arrays[w][i];
-        if telomeric[w][i] {
-            assignment[w][i] = 0;
-            continue;
+        b
+    }
+
+    /// Is an array mostly made of the unit's k-mers (variants and all)?
+    fn is_telomeric(&self, a: &Array, seq: &[u8]) -> bool {
+        if self.unit_kmers.is_empty() {
+            return false;
+        }
+        let codes = tandem::kmer_codes(&seq[a.start..a.end], FAMILY_K);
+        let hits = codes
+            .iter()
+            .flatten()
+            .filter(|&&c| {
+                self.unit_kmers
+                    .contains(&tandem::canonical_code(c, FAMILY_K))
+            })
+            .count();
+        !codes.is_empty() && hits as f64 >= TELOMERIC_COVER * codes.len() as f64
+    }
+
+    /// The family of an array from `seq`, founding a new one if none is similar.
+    fn assign(&mut self, a: &Array, seq: &[u8]) -> usize {
+        if self.is_telomeric(a, seq) {
+            return 0;
         }
         let canon = canonical(&a.kmers);
         let repeated = canonical(&a.repeated);
         // the better of the two similarities, consensus and repeated k-mers
-        let mut best: HashMap<usize, f64> = similar(&canon, &index, &|f| families[f].kmers.len());
-        for (f, j) in similar(&repeated, &index_repeated, &|f| families[f].repeated.len()) {
+        let families = &self.families;
+        let mut best = similar(&canon, &self.index, |f| families[f].kmers.len());
+        for (f, j) in similar(&repeated, &self.index_repeated, |f| {
+            families[f].repeated.len()
+        }) {
             let e = best.entry(f).or_default();
             *e = e.max(j);
         }
-        let best = best
+        if let Some((f, _)) = best
             .into_iter()
             .filter(|&(_, j)| j >= FAMILY_JACCARD)
-            .max_by(|a, b| a.1.total_cmp(&b.1).then(b.0.cmp(&a.0)));
-        let f = match best {
-            Some((f, _)) => f,
-            None => {
-                let f = families.len();
-                for &c in &canon {
-                    index.entry(c).or_default().push(f);
-                }
-                for &c in &repeated {
-                    index_repeated.entry(c).or_default().push(f);
-                }
-                let telomeric = !unit_kmers.is_empty()
-                    && canon.intersection(&unit_kmers).count() as f64
-                        >= TELOMERIC_SHARE * unit_kmers.len() as f64;
-                families.push(Family {
-                    period: a.period,
-                    consensus: utils::lex_min(&String::from_utf8_lossy(&a.consensus)),
-                    kmers: canon,
-                    repeated,
-                    forward: a.kmers.clone(),
-                    telomeric,
-                });
-                f
-            }
-        };
-        assignment[w][i] = f;
+            .max_by(|a, b| a.1.total_cmp(&b.1).then(b.0.cmp(&a.0)))
+        {
+            return f;
+        }
+        let f = self.families.len();
+        for &c in &canon {
+            self.index.entry(c).or_default().push(f);
+        }
+        for &c in &repeated {
+            self.index_repeated.entry(c).or_default().push(f);
+        }
+        let telomeric = !self.unit_kmers.is_empty()
+            && canon.intersection(&self.unit_kmers).count() as f64
+                >= TELOMERIC_SHARE * self.unit_kmers.len() as f64;
+        self.families.push(Family {
+            period: a.period,
+            consensus: utils::lex_min(&String::from_utf8_lossy(&a.consensus)),
+            kmers: canon,
+            repeated,
+            forward: a.kmers.clone(),
+            telomeric,
+        });
+        f
     }
-    (families, assignment)
+
+    /// Assign the arrays of a set of sequences, largest arrays first, so each
+    /// family is represented by its largest array. Returns, per sequence, the
+    /// family of each array.
+    fn assign_all(&mut self, arrays: &[Vec<Array>], seqs: &[&[u8]]) -> Vec<Vec<usize>> {
+        let mut order: Vec<(usize, usize)> = arrays
+            .iter()
+            .enumerate()
+            .flat_map(|(w, a)| (0..a.len()).map(move |i| (w, i)))
+            .collect();
+        order.sort_unstable_by_key(|&(w, i)| (std::cmp::Reverse(arrays[w][i].len()), w, i));
+        let mut assignment: Vec<Vec<usize>> = arrays.iter().map(|a| vec![0; a.len()]).collect();
+        for (w, i) in order {
+            assignment[w][i] = self.assign(&arrays[w][i], seqs[w]);
+        }
+        assignment
+    }
 }
 
 /// Does an array read the same way round as its family's representative?
@@ -803,11 +1051,11 @@ mod tests {
                 })
                 .collect()
         });
-        let (_, f, s) = analyse(&w, Some("AAACCCT"), 2000);
+        let (_, b, s) = analyse(&w, Some("AAACCCT"), 2000);
         assert_eq!(s["class"], "telomeric");
         assert_eq!(s["top_family"], 0);
         assert_eq!(s["top_family_ends"], 12);
-        assert_eq!(f[0].consensus, "AAACCCT");
+        assert_eq!(b.families[0].consensus, "AAACCCT");
     }
 
     #[test]
