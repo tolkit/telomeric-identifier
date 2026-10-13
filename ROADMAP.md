@@ -44,6 +44,38 @@ work; they feed the methods of the phase 4 comparative paper.
 - [ ] Understand why C-rich telomeres are longer than G-rich in the same read sets (meadow brown HiFi p = 0.01; oak HiFi and ONT in the same direction). Reverse complementing the reads swaps the result, so it is in the data, not the algorithm
 - [ ] Interrupted telomeres (e.g. Lepidoptera TRAS/SART insertions): report the whole telomeric region as well as the uninterrupted terminal tract
 
+## Phase 3b: chromosome caps without canonical telomeres (`tidk caps`)
+
+Why: the paper's loss lineages (Diptera, spiders and 10 others) were checked with one-off
+scripts in `tol_telomeres/shifts/d2_ends/` (`ends.py`: terminal vs interior tandem repeats
+and shared sequence; `end_reads.py`: HiFi reads past the tip). Every new clade means redoing
+them. D3 showed the read check is what makes a "no cap" call defensible. Spider assemblies
+stop short of the chromosome ends (HiFi overhangs of 3–5 kb at 11–31 ends in 8 species).
+Lepidoptera controls also look "open", because assemblies trim telomeres, but their
+overhangs are the telomeric unit. So the call must rest on what the overhang is, not on
+whether one exists.
+
+One command per assembly (`tidk caps -f asm.fa [--reads hifi.fa.gz] [--unit AACCT]`); a
+TSV per chromosome end, a species summary and JSON. Sections:
+
+- [ ] **Telomere call** at each end: reuse `ends.rs` (present, length, `wrong_strand`, `not_terminal`)
+- [ ] **End-enriched tandem repeats**:
+  - per end, the dominant tandem array in the terminal window (default 20 kb), with unit, period, array length and orientation toward the tip;
+  - arrays grouped into families across ends (rotation-aware canonical k-mers);
+  - enrichment: the fraction of ends where a family is top vs interior windows of the same chromosomes;
+  - species class: `telomeric`, `terminal_satellite` (e.g. Diptera 160–200 bp caps), `none`.
+
+  Needs a built-in tandem-repeat finder for periods up to ~2 kb. tidk is a single binary, so not TRF; validate against the TRF results from D2.
+- [ ] **Is the end real?** (`--reads`):
+  - map reads to the terminal ~50 kb (minimap2 crate or a k-mer anchor; reuse the `length.rs` anchoring);
+  - per end: tip reads, reads running ≥ 1 kb past the tip, median overhang, open/mixed/closed;
+  - the top tandem family in the overhangs, counted per end. Pooled reads mislead: one collapsed array gave 13,220 of 14,230 *Anyphaena* overhang reads;
+  - flag ends with N gaps or low coverage near the tip.
+- [ ] **Shared non-tandem sequence** at ends (e.g. *Drosophila* HeT-A/TART arrays): end windows aligned to each other with tandem repeats masked, vs interior; head-to-tail orientation bias.
+- [ ] Later: classify end-enriched families with rep (satellite vs TRAS/SART/HeT-A-type TE vs unknown); this also covers the interrupted Lepidoptera telomeres (phase 3).
+- [ ] **Validation set:** the D2/D3 species. Controls should come out `telomeric` (132/150 with the scripts); Diptera `terminal_satellite` (154/402); spiders open ends with non-telomeric overhangs (8/8); *Drosophila* shared non-tandem.
+- [ ] Then rerun D2/D3 over all 12 loss lineages with `tidk caps` and cite it in the paper's methods.
+
 ## Phase 4: comparative telomere evolution paper
 
 How the repositories fit together:
@@ -96,5 +128,5 @@ to-dos) is `tol/notes/paper_outline.md` in tr_tert, with the literature behind i
 ### Other
 
 - [ ] Interstitial telomeric sequences as markers of chromosome fusion and karyotype evolution
-- [ ] Survey taxa that lack canonical telomeres (started: Diptera, spiders, mayflies, *Viscum*)
+- [ ] Survey taxa that lack canonical telomeres: Diptera (satellite caps in 154/402), spiders (assemblies open at the ends; caps unresolved), 10 other losses, *Viscum*. Moving to `tidk caps` (phase 3b)
 - [ ] Target journal: MBE, Genome Research or PNAS, with tidk v1.0 released alongside
