@@ -1,7 +1,9 @@
 use anyhow::Result;
 use clap::{arg, builder::ArgPredicate, crate_version, value_parser, Arg, Command};
 use std::path::PathBuf;
-use tidk::{build, clades::get_clades, ends, explore, finder, length, plot, search, SubCommand};
+use tidk::{
+    build, caps, clades::get_clades, ends, explore, finder, length, plot, search, SubCommand,
+};
 
 fn main() -> Result<()> {
     // command line options
@@ -167,6 +169,56 @@ fn main() -> Result<()> {
                 )
         )
         .subcommand(
+            Command::new("caps")
+                .about("Characterise what is at chromosome ends, with or without a canonical telomere: telomere calls, end-enriched tandem repeat families, and their orientation.")
+                .arg(
+                    Arg::new("fasta")
+                        .value_name("FASTA")
+                        .value_parser(value_parser!(PathBuf))
+                        .required(true)
+                        .help("The input fasta file")
+                )
+                .arg(
+                    arg!(-s --string [STRING] "The telomeric repeat unit, in any rotation or orientation. Discovered from the sequence ends if not given.")
+                )
+                .arg(
+                    arg!(-w --window [WINDOW] "Length of each end and interior window, in bp")
+                        .value_parser(value_parser!(usize))
+                        .default_value("20000")
+                )
+                .arg(
+                    arg!(--interior [INTERIOR] "Interior windows per sequence, evenly spaced, as a baseline for the ends")
+                        .value_parser(value_parser!(usize))
+                        .default_value("3")
+                )
+                .arg(
+                    arg!(--include [REGEX] "Only use sequences whose ID matches this regular expression (e.g. '^SUPER_' for Tree of Life chromosomes)")
+                )
+                .arg(
+                    arg!(--exclude [REGEX] "Skip sequences whose ID matches this regular expression (e.g. 'unloc')")
+                )
+                .arg(
+                    arg!(--"max-period" [MAX_PERIOD] "Longest tandem repeat period to look for, in bp")
+                        .value_parser(value_parser!(usize))
+                        .default_value("2000")
+                )
+                .arg(
+                    arg!(--"min-sequence-length" [MIN_SEQUENCE_LENGTH] "Skip sequences shorter than this, in bp (e.g. unplaced scaffolds)")
+                        .value_parser(value_parser!(usize))
+                        .default_value("1000000")
+                )
+                .arg(
+                    arg!(-o --output <OUTPUT> "Output filename prefix")
+                        .value_parser(value_parser!(PathBuf))
+                        .required(true)
+                )
+                .arg(
+                    arg!(-d --dir [DIR] "Output directory to write files to")
+                        .value_parser(value_parser!(PathBuf))
+                        .default_value(".")
+                )
+        )
+        .subcommand(
             Command::new("length")
                 .about("Measure telomere lengths from long reads (PacBio HiFi or ONT), using telomeres at read ends.")
                 .arg(
@@ -294,6 +346,9 @@ fn main() -> Result<()> {
         }
         Some(("ends", matches)) => {
             ends::ends(matches)?;
+        }
+        Some(("caps", matches)) => {
+            caps::caps(matches)?;
         }
         Some(("length", matches)) => {
             length::length(matches)?;

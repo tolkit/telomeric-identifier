@@ -343,7 +343,12 @@ pub(crate) fn telomere_blocks(window: &[u8], config: &EndsConfig) -> Vec<Block> 
 
 /// Call the telomere at one end of a sequence, from the window at that end.
 /// `window_start` is the position of the window in the sequence.
-fn call_end(window: &[u8], side: Side, window_start: usize, config: &EndsConfig) -> EndCall {
+pub(crate) fn call_end(
+    window: &[u8],
+    side: Side,
+    window_start: usize,
+    config: &EndsConfig,
+) -> EndCall {
     // runs are found in chunks of the unit length from the start of the
     // window, so at the end side, trim the window so chunks finish exactly
     // at the sequence end

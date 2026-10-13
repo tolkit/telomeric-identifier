@@ -1836,6 +1836,7 @@ dependencies = [
  "itertools",
  "lexical-sort",
  "rayon",
+ "regex",
  "reqwest",
  "serde",
  "serde_json",

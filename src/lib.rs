@@ -11,6 +11,8 @@ use std::{
 
 /// For building the database
 pub mod build;
+/// The entry point for the `tidk caps` subcommand.
+pub mod caps;
 /// A module where the clades are defined, and their
 /// respective telomeric repeats are enumerated.
 pub mod clades;
@@ -27,6 +29,8 @@ pub mod length;
 pub mod plot;
 /// The entry point for the `tidk search` subcommand.
 pub mod search;
+/// Tandem repeat finding, for `tidk caps`.
+pub(crate) mod tandem;
 /// Module for utilities.
 pub mod utils;
 

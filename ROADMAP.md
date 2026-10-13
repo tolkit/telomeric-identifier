@@ -58,14 +58,15 @@ whether one exists.
 One command per assembly (`tidk caps -f asm.fa [--reads hifi.fa.gz] [--unit AACCT]`); a
 TSV per chromosome end, a species summary and JSON. Sections:
 
-- [ ] **Telomere call** at each end: reuse `ends.rs` (present, length, `wrong_strand`, `not_terminal`)
-- [ ] **End-enriched tandem repeats**:
+- [x] **Telomere call** at each end: reuse `ends.rs` (present, length, `wrong_strand`, `not_terminal`)
+- [x] **End-enriched tandem repeats** (`src/caps.rs`, `src/tandem.rs`):
   - per end, the dominant tandem array in the terminal window (default 20 kb), with unit, period, array length and orientation toward the tip;
   - arrays grouped into families across ends (rotation-aware canonical k-mers);
   - enrichment: the fraction of ends where a family is top vs interior windows of the same chromosomes;
   - species class: `telomeric`, `terminal_satellite` (e.g. Diptera 160–200 bp caps), `none`.
 
-  Needs a built-in tandem-repeat finder for periods up to ~2 kb. tidk is a single binary, so not TRF; validate against the TRF results from D2.
+  Built-in tandem finder (k-mer lags, periods 1 bp–2 kb, tolerant of divergent copies). Families compare consensus and repeated k-mers; with a unit, arrays ≥ 30% unit k-mers form one telomeric family (variant-rich plant telomeres). `--include`/`--exclude` regexes choose chromosomes (ToL: `'^SUPER_'`, `unloc`).
+  Validation against the D2 TRF scripts on 600 species (same chromosomes): same class in 133/149 controls and 404/451 losses; telomere top at ends in 130/149 controls (scripts 132/150). Most disagreements sit at the 50% end-fraction threshold with the same period. Three interior windows per chromosome (scripts: one) catch satellites that are also interior (e.g. *Atherix*). 2–30 s and < 1 GB per assembly
 - [ ] **Is the end real?** (`--reads`):
   - map reads to the terminal ~50 kb (minimap2 crate or a k-mer anchor; reuse the `length.rs` anchoring);
   - per end: tip reads, reads running ≥ 1 kb past the tip, median overhang, open/mixed/closed;
