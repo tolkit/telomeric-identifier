@@ -28,6 +28,7 @@ use rayon::prelude::*;
 use regex::Regex;
 use std::collections::{HashMap, HashSet};
 use std::fs::{create_dir_all, File};
+use std::hash::BuildHasherDefault;
 use std::io::{LineWriter, Write};
 use std::path::PathBuf;
 
@@ -43,6 +44,13 @@ const TELOMERIC_COVER: f64 = 0.3;
 const CAP_END_FRACTION: f64 = 0.5;
 const CAP_MEDIAN_COVER: f64 = 0.2;
 const CAP_ENRICHMENT: f64 = 2.0;
+/// Shared non-tandem sequence: k-mer length, bp shared for a partner, and
+/// partners for a window to count as sharing. As for caps, at least half the
+/// ends must share, at least [`CAP_ENRICHMENT`]x the interior fraction.
+const SHARED_K: usize = 16;
+const MIN_SHARED: usize = 2000;
+const SHARED_MIN_PARTNERS: usize = 2;
+const SHARED_END_FRACTION: f64 = 0.5;
 /// Telomere calls: minimum length and offset from the tip, as in `tidk ends`.
 const TELOMERE_MIN_LENGTH: usize = 200;
 const TELOMERE_MAX_OFFSET: usize = 1000;
@@ -97,6 +105,19 @@ struct WindowResult {
     families: Vec<usize>,
     top: Option<TopFamily>,
     tandem_cover: f64,
+    /// Non-tandem sequence shared with windows of the same kind elsewhere.
+    shared: Shared,
+}
+
+/// Sequence a window shares with windows of the same kind (ends with ends,
+/// interior with interior) on other sequences, tandem arrays masked.
+#[derive(Default, Clone)]
+struct Shared {
+    /// Windows sharing at least [`MIN_SHARED`] bp.
+    partners: usize,
+    /// Shared bp with those partners, in the same and opposite orientation.
+    same: usize,
+    opposite: usize,
 }
 
 struct TopFamily {
@@ -501,6 +522,89 @@ fn summarise_reads(per_end: &[EndReads], families: &[Family]) -> serde_json::Val
     })
 }
 
+fn results_arrays(results: &[WindowResult]) -> Vec<&[Array]> {
+    results.iter().map(|r| r.arrays.as_slice()).collect()
+}
+
+/// A k-mer of mostly one base, or of fewer than three bases.
+fn low_complexity(mut code: u32, k: usize) -> bool {
+    let mut counts = [0usize; 4];
+    for _ in 0..k {
+        counts[(code & 3) as usize] += 1;
+        code >>= 2;
+    }
+    counts.iter().filter(|&&c| c > 0).count() < 3 || counts.iter().any(|&c| c * 4 > k * 3)
+}
+
+/// Non-tandem sequence shared between windows (e.g. the HeT-A/TART
+/// retrotransposon arrays at *Drosophila* ends). Tandem arrays are masked;
+/// for each window, the bp covered by [`SHARED_K`]-mers it shares with each
+/// window of the same kind on another sequence. Partners share at least
+/// [`MIN_SHARED`] bp. Orientation counts whether shared k-mers read the same
+/// way round in both windows; end windows read from the tip, so arrays
+/// oriented consistently towards the tip read the same way.
+fn shared_sequence(windows: &[Window], arrays: &[&[Array]]) -> Vec<Shared> {
+    let kmers: Vec<Vec<(usize, u32, bool)>> = windows
+        .par_iter()
+        .zip(arrays)
+        .map(|(w, arrays)| {
+            let mut s = w.seq.clone();
+            for a in arrays.iter() {
+                s[a.start..a.end].fill(b'N');
+            }
+            tandem::kmer_codes(&s, SHARED_K)
+                .into_iter()
+                .enumerate()
+                .filter_map(|(i, c)| {
+                    let c = c?;
+                    let rc = tandem::revcomp_code(c, SHARED_K);
+                    (!low_complexity(c, SHARED_K)).then_some((i, c.min(rc), c <= rc))
+                })
+                .collect()
+        })
+        .collect();
+    // k-mer -> (window, reads forward), once per window
+    let mut index: HashMap<u32, Vec<(u32, bool)>, BuildHasherDefault<anchor::KmerHasher>> =
+        HashMap::default();
+    for (w, ks) in kmers.iter().enumerate() {
+        let mut seen = HashSet::new();
+        for &(_, c, f) in ks {
+            if seen.insert(c) {
+                index.entry(c).or_default().push((w as u32, f));
+            }
+        }
+    }
+    (0..windows.len())
+        .into_par_iter()
+        .map(|a| {
+            let wa = &windows[a];
+            // per partner: covered bp, end of the last k-mer counted, same, opposite
+            let mut cover: HashMap<u32, [usize; 4]> = HashMap::new();
+            for &(pos, c, f) in &kmers[a] {
+                for &(b, fb) in index.get(&c).into_iter().flatten() {
+                    let wb = &windows[b as usize];
+                    if b as usize == a || wb.kind.is_end() != wa.kind.is_end() || wb.id == wa.id {
+                        continue;
+                    }
+                    let e = cover.entry(b).or_default();
+                    let add = (pos + SHARED_K).saturating_sub(pos.max(e[1]));
+                    e[0] += add;
+                    e[1] = pos + SHARED_K;
+                    e[if f == fb { 2 } else { 3 }] += add;
+                }
+            }
+            cover
+                .values()
+                .filter(|e| e[0] >= MIN_SHARED)
+                .fold(Shared::default(), |s, e| Shared {
+                    partners: s.partners + 1,
+                    same: s.same + e[2],
+                    opposite: s.opposite + e[3],
+                })
+        })
+        .collect()
+}
+
 /// Tandem arrays, families and the end-enrichment summary for a set of
 /// windows (end windows read from the tip inwards).
 fn analyse(
@@ -521,6 +625,11 @@ fn analyse(
         .zip(windows)
         .map(|((arrays, fams), w)| window_result(arrays, fams, w.seq.len(), &builder.families))
         .collect();
+    let shared = shared_sequence(windows, &results_arrays(&results));
+    let mut results = results;
+    for (r, sh) in results.iter_mut().zip(shared) {
+        r.shared = sh;
+    }
     let summary = summarise(windows, &results, &builder.families);
     (results, builder, summary)
 }
@@ -748,6 +857,7 @@ fn window_result(
         families: fams,
         top,
         tandem_cover,
+        shared: Shared::default(),
     }
 }
 
@@ -784,20 +894,43 @@ fn summarise(
         .max_by_key(|(f, n)| (**n, std::cmp::Reverse(**f)))
         .map(|(&f, &n)| (f, n));
     let frac = |n: usize, d: usize| if d == 0 { 0.0 } else { n as f64 / d as f64 };
+    // shared non-tandem sequence
+    let sharing = |ix: &[usize]| {
+        frac(
+            ix.iter()
+                .filter(|&&i| results[i].shared.partners >= SHARED_MIN_PARTNERS)
+                .count(),
+            ix.len(),
+        )
+    };
+    let (sh_end, sh_int) = (sharing(&ends), sharing(&interior));
+    let shared = sh_end >= SHARED_END_FRACTION && sh_end >= CAP_ENRICHMENT * sh_int;
+    let (same, opposite) = ends.iter().fold((0, 0), |(s, o), &i| {
+        (s + results[i].shared.same, o + results[i].shared.opposite)
+    });
+    let shared_json = serde_json::json!({
+        "shared_ends": shared,
+        "ends_shared_fraction": sh_end,
+        "interior_shared_fraction": sh_int,
+        "ends_shared_same_orientation": if same + opposite == 0 { serde_json::Value::Null } else { frac(same, same + opposite).into() },
+    });
     let ends_cover = median(ends.iter().map(|&i| results[i].tandem_cover).collect());
     let interior_cover = median(interior.iter().map(|&i| results[i].tandem_cover).collect());
 
     let Some((f, n)) = top else {
-        return serde_json::json!({
-            "class": "none",
-            "top_family": null,
-            "top_family_consensus_short": "",
-            "top_family_period": 0,
-            "top_family_ends": 0,
-            "top_family_interior_fraction": 0.0,
-            "ends_tandem_cover_median": ends_cover,
-            "interior_tandem_cover_median": interior_cover,
-        });
+        return merge(
+            serde_json::json!({
+                "class": if shared { "shared_complex" } else { "none" },
+                "top_family": null,
+                "top_family_consensus_short": "",
+                "top_family_period": 0,
+                "top_family_ends": 0,
+                "top_family_interior_fraction": 0.0,
+                "ends_tandem_cover_median": ends_cover,
+                "interior_tandem_cover_median": interior_cover,
+            }),
+            shared_json,
+        );
     };
     let at: Vec<usize> = ends
         .iter()
@@ -820,29 +953,41 @@ fn summarise(
         .count();
     let cap =
         f_end >= CAP_END_FRACTION && cover >= CAP_MEDIAN_COVER && f_end >= CAP_ENRICHMENT * f_int;
-    let class = match (cap, families[f].telomeric) {
-        (true, true) => "telomeric",
-        (true, false) => "terminal_satellite",
-        (false, _) => "none",
+    let class = match (cap, families[f].telomeric, shared) {
+        (true, true, _) => "telomeric",
+        (true, false, _) => "terminal_satellite",
+        (false, _, true) => "shared_complex",
+        (false, _, false) => "none",
     };
     let consensus = &families[f].consensus;
-    serde_json::json!({
-        "class": class,
-        "top_family": f,
-        "top_family_period": families[f].period,
-        "top_family_consensus": consensus,
-        "top_family_consensus_short": consensus.chars().take(40).collect::<String>(),
-        "top_family_telomeric": families[f].telomeric,
-        "top_family_ends": n,
-        "top_family_end_fraction": f_end,
-        "top_family_interior_fraction": f_int,
-        "top_family_median_cover": cover,
-        "top_family_orientation_consistency": frac(forward.max(n - forward), n),
-        "ends": ends.len(),
-        "interior_windows": interior.len(),
-        "ends_tandem_cover_median": ends_cover,
-        "interior_tandem_cover_median": interior_cover,
-    })
+    merge(
+        serde_json::json!({
+            "class": class,
+            "top_family": f,
+            "top_family_period": families[f].period,
+            "top_family_consensus": consensus,
+            "top_family_consensus_short": consensus.chars().take(40).collect::<String>(),
+            "top_family_telomeric": families[f].telomeric,
+            "top_family_ends": n,
+            "top_family_end_fraction": f_end,
+            "top_family_interior_fraction": f_int,
+            "top_family_median_cover": cover,
+            "top_family_orientation_consistency": frac(forward.max(n - forward), n),
+            "ends": ends.len(),
+            "interior_windows": interior.len(),
+            "ends_tandem_cover_median": ends_cover,
+            "interior_tandem_cover_median": interior_cover,
+        }),
+        shared_json,
+    )
+}
+
+/// The fields of two JSON objects in one.
+fn merge(mut a: serde_json::Value, b: serde_json::Value) -> serde_json::Value {
+    if let (Some(a), serde_json::Value::Object(b)) = (a.as_object_mut(), b) {
+        a.extend(b);
+    }
+    a
 }
 
 fn telomere_counts(windows: &[Window]) -> serde_json::Value {
@@ -864,7 +1009,7 @@ fn write_windows(
     let mut f = LineWriter::new(File::create(path)?);
     writeln!(
         f,
-        "id\tsequence_length\tkind\twindow_start\ttelomere\ttelomere_length\ttandem_cover\tarrays\ttop_family\ttop_family_period\ttop_family_cover\ttop_family_telomeric\ttop_family_orientation\ttop_family_consensus"
+        "id\tsequence_length\tkind\twindow_start\ttelomere\ttelomere_length\ttandem_cover\tarrays\tshared_partners\ttop_family\ttop_family_period\ttop_family_cover\ttop_family_telomeric\ttop_family_orientation\ttop_family_consensus"
     )?;
     for (w, r) in windows.iter().zip(results) {
         let (status, tlen) = match &w.telomere {
@@ -901,13 +1046,14 @@ fn write_windows(
         };
         writeln!(
             f,
-            "{}\t{}\t{}\t{}\t{status}\t{tlen}\t{:.3}\t{}\t{top}",
+            "{}\t{}\t{}\t{}\t{status}\t{tlen}\t{:.3}\t{}\t{}\t{top}",
             w.id,
             w.sequence_length,
             w.kind.name(),
             w.position,
             r.tandem_cover,
-            r.arrays.len()
+            r.arrays.len(),
+            r.shared.partners
         )?;
     }
     Ok(())
@@ -1056,6 +1202,19 @@ mod tests {
         assert_eq!(s["top_family"], 0);
         assert_eq!(s["top_family_ends"], 12);
         assert_eq!(b.families[0].consensus, "AAACCCT");
+    }
+
+    #[test]
+    fn test_shared_non_tandem_sequence() {
+        // a 6 kb non-tandem element, in the same orientation, at every end
+        let element = random_seq(6000, 3);
+        let w = windows(6, |_| element.clone());
+        let (r, _, s) = analyse(&w, None, 2000);
+        assert_eq!(s["class"], "shared_complex");
+        assert_eq!(s["ends_shared_fraction"], 1.0);
+        assert_eq!(s["interior_shared_fraction"], 0.0);
+        assert!(s["ends_shared_same_orientation"].as_f64().unwrap() > 0.99);
+        assert_eq!(r[0].shared.partners, 10);
     }
 
     #[test]
