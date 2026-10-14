@@ -11,6 +11,10 @@
 //! it by the bases beyond: the chromosome continues past the assembly end if
 //! many reads do. No alignment is done, so the tip is only
 //! placed to within the read's indels between it and the nearest anchor.
+//! A read that leaves the bait before its nearest anchor (another haplotype,
+//! a chimera) would be extrapolated to a false overhang, so a read covering
+//! the tip must also share [`REACH_FRACTION`] of its k-mers between the tip
+//! and that anchor with the same stretch of bait; otherwise it is diverged.
 
 use std::collections::HashMap;
 use std::hash::{BuildHasherDefault, Hasher};
@@ -27,6 +31,12 @@ const MIN_ANCHORS: usize = 10;
 const MIN_SPAN: usize = 2000;
 /// A read starting at most this far inside the tip still covers it.
 pub(crate) const TIP: i64 = 200;
+/// Stretches between the tip and the nearest anchor shorter than this are not checked.
+const REACH_MIN: usize = 500;
+/// Fraction of the read's k-mers in that stretch found in the bait's.
+const REACH_FRACTION: f64 = 0.5;
+/// Read positions looked up when checking the stretch.
+const REACH_STRIDE: usize = 4;
 
 /// A fast hasher for k-mer codes (multiplicative, as in FxHash).
 #[derive(Default)]
@@ -60,6 +70,8 @@ struct Site {
 /// The k-mer index of all end baits.
 pub(crate) struct Baits {
     index: KmerMap<Option<Site>>,
+    /// Per end, every k-mer of the bait and the first position it occurs at.
+    all: Vec<KmerMap<u32>>,
     /// Per end, the distance from the tip to its first unique k-mer.
     pub(crate) first_anchor: Vec<Option<usize>>,
 }
@@ -74,6 +86,9 @@ pub(crate) struct Hit {
     /// The overhang, read in the bait's orientation (outside towards the tip),
     /// if at least `keep` bp.
     pub(crate) sequence: Option<Vec<u8>>,
+    /// The read covers the tip by extrapolation but does not match the bait
+    /// between the tip and its nearest anchor: it is not counted as a tip read.
+    pub(crate) diverged: bool,
 }
 
 fn code(b: u8) -> Option<u64> {
@@ -131,8 +146,11 @@ impl Baits {
     /// Index baits, each read from the tip inwards.
     pub(crate) fn new(baits: &[&[u8]]) -> Self {
         let mut index: KmerMap<Option<Site>> = KmerMap::default();
+        let mut all = Vec::with_capacity(baits.len());
         for (end, bait) in baits.iter().enumerate() {
+            let mut a: KmerMap<u32> = KmerMap::default();
             for (pos, c, forward) in kmers(bait, 1) {
+                a.entry(c).or_insert(pos as u32);
                 index
                     .entry(c)
                     .and_modify(|s| *s = None)
@@ -142,6 +160,7 @@ impl Baits {
                         forward,
                     }));
             }
+            all.push(a);
         }
         index.retain(|_, s| s.is_some());
         let mut first_anchor = vec![None; baits.len()];
@@ -153,6 +172,7 @@ impl Baits {
         }
         Baits {
             index,
+            all,
             first_anchor,
         }
     }
@@ -191,8 +211,9 @@ impl Baits {
             return None;
         }
         // the diagonal at the anchor nearest the tip
-        let overhang = h.iter().min_by_key(|&&(_, p)| p).unwrap().0;
-        let sequence = (overhang >= keep as i64).then(|| {
+        let &(overhang, nearest) = h.iter().min_by_key(|&&(_, p)| p).unwrap();
+        let diverged = overhang >= -TIP && !self.reaches_tip(read, end, same, overhang, nearest);
+        let sequence = (overhang >= keep as i64 && !diverged).then(|| {
             let n = overhang as usize;
             if same {
                 read[..n].to_vec()
@@ -205,7 +226,36 @@ impl Baits {
             overhang,
             span_end: len - overhang,
             sequence: sequence.map(|s| s.to_ascii_uppercase()),
+            diverged,
         })
+    }
+
+    /// The read matches the bait between the tip and the nearest anchor (at
+    /// bait position `nearest`): enough of its k-mers there occur in the bait
+    /// before the anchor.
+    fn reaches_tip(&self, read: &[u8], end: u32, same: bool, overhang: i64, nearest: u32) -> bool {
+        if (nearest as usize) < REACH_MIN {
+            return true;
+        }
+        let len = read.len() as i64;
+        // read coordinates, in the bait's orientation, of bait [0, nearest)
+        let (from, to) = (overhang.max(0), (overhang + nearest as i64).min(len));
+        if to - from < REACH_MIN as i64 {
+            return true;
+        }
+        let (from, to) = if same {
+            (from, to)
+        } else {
+            (len - to, len - from)
+        };
+        let all = &self.all[end as usize];
+        let limit = nearest + DIAGONAL_TOLERANCE as u32;
+        let (mut n, mut found) = (0usize, 0usize);
+        for (_, c, _) in kmers(&read[from as usize..to as usize], REACH_STRIDE) {
+            n += 1;
+            found += all.get(&c).is_some_and(|&p| p < limit) as usize;
+        }
+        n == 0 || found as f64 >= REACH_FRACTION * n as f64
     }
 }
 
@@ -265,5 +315,26 @@ mod tests {
         let read = [random_seq(2000, 8), a[..10_000].to_vec()].concat();
         let hit = baits.anchor(&read, 1000).unwrap();
         assert_eq!((hit.end, hit.overhang), (0, 2000));
+        assert!(!hit.diverged);
+    }
+
+    #[test]
+    fn test_read_leaving_the_bait_before_the_tip_is_diverged() {
+        let bait = random_seq(30_000, 9);
+        let baits = Baits::new(&[&bait]);
+        // matches the bait from 3 kb inwards, but not the 3 kb to the tip
+        let read = [random_seq(5000, 10), bait[3000..12_000].to_vec()].concat();
+        for r in [read.clone(), revcomp(&read)] {
+            let hit = baits.anchor(&r, 1000).unwrap();
+            assert_eq!(hit.overhang, 2000);
+            assert!(hit.diverged);
+            assert!(hit.sequence.is_none());
+        }
+        // a true overhang is not
+        let read = [random_seq(2000, 11), bait[..9000].to_vec()].concat();
+        for r in [read.clone(), revcomp(&read)] {
+            let hit = baits.anchor(&r, 1000).unwrap();
+            assert!(!hit.diverged && hit.sequence.is_some());
+        }
     }
 }

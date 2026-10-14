@@ -10,8 +10,9 @@
   assembly: class (`telomeric`, `terminal_satellite`, `shared_complex`, `none`), whether the
   two ends of each sequence share their top family, and segments copied from the tip between
   ends. With `--reads`, long reads past each end (open/closed), the repeats their overhangs
-  carry, and read depth near the tip. `-w 100000` is recommended for lineages without
-  telomerase.
+  carry, and read depth near the tip; reads that diverge from the assembly before the tip
+  are not counted. Use the default window for the class and `-w 100000` for end pairing and
+  tip copies.
 
 ## 0.3.0
 

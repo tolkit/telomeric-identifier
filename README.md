@@ -174,19 +174,19 @@ Options:
 - **End pairing:** whether the two ends of each sequence share their top family, against random pairing. Spider chromosomes almost never do (a centromeric satellite at one end of acrocentric chromosomes, other families at the other end); a telomere or a fly satellite cap is shared by both ends.
 - **Segments copied from the tip** between ends: non-tandem sequence collinear from both tips (≥ 5kb of shared 16-mers at ≥ 50% density, roughly ≥ 97% identity), counted in non-tandem coordinates so tandem arrays of different length in the two copies do not break it. This is the footprint of break-induced replication or ALT-like copying of one end onto another.
 - **Assembly gaps** (runs of ≥ 10 Ns) near the tip: the tip is then a separately placed contig.
-- **Reads past the ends** (`--reads`, HiFi or ONT from the same individual). Reads are anchored to the terminal `--bait` bp of each end (default 30kb) by k-mers unique to one end, without alignment. Each end is `open` (most tip reads run ≥ 1kb past the tip), `closed`, `mixed` or `no_reads`; up to 50 overhangs per end go through the same tandem finder and families as the windows. Read depth 2-3kb inside the tip is flagged `low_coverage` below a quarter of the median over ends. Assemblies often trim telomeres, so telomeric ends can look open too: what matters is what the overhangs carry (the telomere in Lepidoptera, a satellite in some flies), not whether there are any.
+- **Reads past the ends** (`--reads`, HiFi or ONT from the same individual). Reads are anchored to the terminal `--bait` bp of each end (default 30kb) by k-mers unique to one end, without alignment. A read placed over the tip must match the bait between the tip and its anchor nearest the tip (half of its k-mers there found in that stretch of bait); reads that leave it first, from the other haplotype or chimeric, are counted as `diverged_reads` and not as tip reads, as they would otherwise be extrapolated to false overhangs. Each end is `open` (most tip reads run ≥ 1kb past the tip), `closed`, `mixed` or `no_reads`; up to 50 overhangs per end go through the same tandem finder and families as the windows. Read depth 2-3kb inside the tip is flagged `low_coverage` below a quarter of the median over ends. Assemblies often trim telomeres, so telomeric ends can look open too: what matters is what the overhangs carry (the telomere in Lepidoptera, a satellite in some flies), not whether there are any.
 
-**Window size.** The default 20kb window suits telomeric assemblies. For lineages without telomerase use `-w 100000`: end satellites can run tens of kb from the tip (10-98kb at spider centromeric ends), and copied end segments up to the whole window. Use `--include`/`--exclude` to choose the chromosomes (for Tree of Life assemblies: `--include '^SUPER_' --exclude unloc`).
+**Window size.** Run the default 20kb window for the class and the end families: the class needs the top family to cover 20% of the window, so at `-w 100000` a telomere of a few kb is missed (all 36 assemblies classed `telomeric` at 20kb in a 600-assembly test fell to `none`) and terminal satellites are lost too. Add a second run at `-w 100000` for end pairing and segments copied from the tip, which can run tens of kb inwards (up to ~100kb between bird microchromosome ends). Shared non-tandem sequence is uninformative at 100kb, as interior windows then share as much as ends. Use `--include`/`--exclude` to choose the chromosomes (for Tree of Life assemblies: `--include '^SUPER_' --exclude unloc`).
 
 Files written:
 
 - `<output>.caps.tsv`: every window with its telomere call, tandem cover, top family (period, cover, orientation towards the tip, consensus), shared-sequence partners, gaps and tip copies (partners, extent from the tip).
 - `<output>.caps.families.tsv`: families at ends, with the ends where each is top and its interior fraction.
 - `<output>.caps.json`: the class and summary (top family, end pairing, sharing, tip copies, gaps, and with `--reads` the end states and overhang families).
-- With `--reads`: `<output>.caps.reads.tsv` (per end: tip reads, overhangs, state, depth, overhang family) and `<output>.caps.overhang.fa`.
+- With `--reads`: `<output>.caps.reads.tsv` (per end: tip reads, overhangs, state, depth, overhang family, diverged reads) and `<output>.caps.overhang.fa`.
 
 For example:
-`tidk caps --include '^SUPER_' --exclude unloc -w 100000 --reads reads1.fa.gz reads2.fa.gz -t 8 -o qqXysAcer qqXysAcer1.1.fa.gz` describes the chromosome ends of a crab spider assembly, with HiFi reads.
+`tidk caps --include '^SUPER_' --exclude unloc --reads reads1.fa.gz reads2.fa.gz -t 8 -o qqXysAcer qqXysAcer1.1.fa.gz` describes the chromosome ends of a crab spider assembly, with HiFi reads.
 
 ```
 Characterise what is at chromosome ends, with or without a canonical telomere: telomere calls, end-enriched tandem repeat families, and their orientation.
@@ -200,7 +200,7 @@ Options:
   -s, --string [<STRING>]
           The telomeric repeat unit, in any rotation or orientation. Discovered from the sequence ends if not given.
   -w, --window [<WINDOW>]
-          Length of each end and interior window, in bp. Use 100000 for lineages without telomerase, whose end satellites can run tens of kb from the tip [default: 20000]
+          Length of each end and interior window, in bp. Keep the default for the class; use 100000 in a second run for end pairing and segments copied from the tip [default: 20000]
       --interior [<INTERIOR>]
           Interior windows per sequence, evenly spaced, as a baseline for the ends [default: 3]
       --include [<REGEX>]

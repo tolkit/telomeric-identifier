@@ -372,6 +372,8 @@ struct EndReads {
     id: String,
     kind: Kind,
     tip_reads: usize,
+    /// Reads placed over the tip that leave the bait before it (not tip reads).
+    diverged: usize,
     overhang_reads: usize,
     median_overhang: Option<i64>,
     state: &'static str,
@@ -403,6 +405,7 @@ fn end_reads(
     eprintln!("[+]	Anchoring reads to {} ends", baits.len());
     let mut overhangs: Vec<Vec<i64>> = vec![Vec::new(); baits.len()];
     let mut depth = vec![0usize; baits.len()];
+    let mut diverged = vec![0usize; baits.len()];
     let mut kept: Vec<Vec<(String, Vec<u8>)>> = vec![Vec::new(); baits.len()];
     let mut n_reads = 0usize;
     for path in reads {
@@ -423,6 +426,10 @@ fn end_reads(
             if h.overhang < -anchor::TIP {
                 continue;
             }
+            if h.diverged {
+                diverged[h.end] += 1;
+                continue;
+            }
             n_reads += 1;
             overhangs[h.end].push(h.overhang);
             if let Some(s) = h.sequence {
@@ -432,7 +439,10 @@ fn end_reads(
             }
         }
     }
-    eprintln!("[+]	{n_reads} reads cover a tip");
+    eprintln!(
+        "[+]	{n_reads} reads cover a tip; {} diverge from the assembly before it",
+        diverged.iter().sum::<usize>()
+    );
 
     // tandem repeats in the kept overhangs, in the same families as the windows
     let flat: Vec<(usize, &[u8])> = kept
@@ -494,6 +504,7 @@ fn end_reads(
                 id: ends[e].id.clone(),
                 kind: ends[e].kind,
                 tip_reads: ov.len(),
+                diverged: diverged[e],
                 overhang_reads: n_over,
                 median_overhang: (!ov.is_empty()).then(|| ov[ov.len() / 2]),
                 state,
@@ -513,7 +524,7 @@ fn end_reads(
     let mut f = LineWriter::new(File::create(format!("{prefix}.caps.reads.tsv"))?);
     writeln!(
         f,
-        "id\tside\ttip_reads\toverhang_reads\tmedian_overhang\tstate\tfirst_anchor\toverhangs_analysed\toverhang_tandem_cover\toverhang_family\toverhang_family_reads\toverhang_family_period\toverhang_family_telomeric\toverhang_family_consensus\tdepth_{DEPTH_AT}\tlow_coverage"
+        "id\tside\ttip_reads\toverhang_reads\tmedian_overhang\tstate\tfirst_anchor\toverhangs_analysed\toverhang_tandem_cover\toverhang_family\toverhang_family_reads\toverhang_family_period\toverhang_family_telomeric\toverhang_family_consensus\tdepth_{DEPTH_AT}\tlow_coverage\tdiverged_reads"
     )?;
     let na = |x: Option<String>| x.unwrap_or_else(|| "NA".into());
     for r in &per_end {
@@ -531,7 +542,7 @@ fn end_reads(
         };
         writeln!(
             f,
-            "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{fam}\t{}\t{}",
+            "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{fam}\t{}\t{}\t{}",
             r.id,
             r.kind.name(),
             r.tip_reads,
@@ -543,6 +554,7 @@ fn end_reads(
             na(r.tandem_cover.map(|c| format!("{c:.3}"))),
             r.depth,
             r.low_coverage,
+            r.diverged,
         )?;
     }
     eprintln!("[+]	Written {prefix}.caps.reads.tsv and .caps.overhang.fa");
@@ -575,6 +587,8 @@ fn summarise_reads(per_end: &[EndReads], families: &[Family]) -> serde_json::Val
         "no_reads": count("no_reads"),
         "median_depth_near_tip": median(per_end.iter().map(|r| r.depth as f64).collect()),
         "low_coverage_ends": per_end.iter().filter(|r| r.low_coverage).count(),
+        "tip_reads": per_end.iter().map(|r| r.tip_reads).sum::<usize>(),
+        "diverged_reads": per_end.iter().map(|r| r.diverged).sum::<usize>(),
         "open_median_overhang": median(open.iter().filter_map(|r| r.median_overhang.map(|m| m as f64)).collect()),
         "open_overhang_tandem_cover_median": if covers.is_empty() { serde_json::Value::Null } else { median(covers).into() },
         "overhang_family": top.map(|(f, _)| f),

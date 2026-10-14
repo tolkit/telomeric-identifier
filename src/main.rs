@@ -182,7 +182,7 @@ fn main() -> Result<()> {
                     arg!(-s --string [STRING] "The telomeric repeat unit, in any rotation or orientation. Discovered from the sequence ends if not given.")
                 )
                 .arg(
-                    arg!(-w --window [WINDOW] "Length of each end and interior window, in bp. Use 100000 for lineages without telomerase, whose end satellites can run tens of kb from the tip")
+                    arg!(-w --window [WINDOW] "Length of each end and interior window, in bp. Keep the default for the class; use 100000 in a second run for end pairing and segments copied from the tip")
                         .value_parser(value_parser!(usize))
                         .default_value("20000")
                 )
