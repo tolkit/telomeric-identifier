@@ -49,11 +49,12 @@ work; they feed the methods of the phase 4 comparative paper.
 Why: the paper's loss lineages (Diptera, spiders and 10 others) were checked with one-off
 scripts in `tol_telomeres/shifts/d2_ends/` (`ends.py`: terminal vs interior tandem repeats
 and shared sequence; `end_reads.py`: HiFi reads past the tip). Every new clade means redoing
-them. D3 showed the read check is what makes a "no cap" call defensible. Spider assemblies
-stop short of the chromosome ends (HiFi overhangs of 3–5 kb at 11–31 ends in 8 species).
-Lepidoptera controls also look "open", because assemblies trim telomeres, but their
-overhangs are the telomeric unit. So the call must rest on what the overhang is, not on
-whether one exists.
+them. D3 showed why reads matter for a "no cap" call: HiFi reads overhang the tip by 3–5 kb
+at 11–31 ends in 8 spiders, but Lepidoptera controls also look "open" (assemblies trim
+telomeres), and their overhangs are the telomeric unit. So overhangs are not evidence of a
+truncated assembly; the call must rest on what the overhang is, not on whether one exists.
+(Spider ends turned out to carry species-specific satellites and segments copied between
+ends: `tol_telomeres/shifts/d2_ends/spiders/`.)
 
 One command per assembly (`tidk caps -f asm.fa [--reads hifi.fa.gz] [--unit AACCT]`); a
 TSV per chromosome end, a species summary and JSON. Sections:
@@ -71,10 +72,11 @@ TSV per chromosome end, a species summary and JSON. Sections:
   - map reads to the terminal ~50 kb (minimap2 crate or a k-mer anchor; reuse the `length.rs` anchoring);
   - per end: tip reads, reads running ≥ 1 kb past the tip, median overhang, open/mixed/closed;
   - the top tandem family in the overhangs, counted per end. Pooled reads mislead: one collapsed array gave 13,220 of 14,230 *Anyphaena* overhang reads;
-  - [ ] flag ends with N gaps or low coverage near the tip.
+  - [x] flag ends with N gaps or low coverage near the tip: `.caps.tsv` gives gap bp and the first gap (runs of ≥ 10 Ns; `ends_gap_near_tip` counts ends with one within 5 kb of the tip, whose tip is a separately placed contig); with `--reads`, read depth over 2–3 kb inside the tip, `low_coverage` below a quarter of the median over ends (relative to the reads given). Open telomeric ends collect 50–100× the median depth (reads from many ends on a collapsed array: *Cochylidia* median 11, open ends up to 1,070).
 
   Done with a k-mer anchor rather than minimap2, so tidk stays a pure Rust binary. 25-mers unique across the terminal 30 kb of all ends are looked up at every 8th read position, and a consistent diagonal places the read; the tip is extrapolated from the anchor nearest it. Overhangs (≥ 1 kb, up to 50 per end) go through the same tandem finder and families as the windows. On the 14 D3 species, the end states match `end_reads.py`. Lepidoptera overhangs fall in the telomeric family at 8–20 open ends (5–6 with the per-end script). Spider overhangs are 0–9% tandem, with 7–25 families across open ends. *Palloptera* overhangs are its 1,015 bp satellite. 10–13 min and < 200 MB per species (2 HiFi files, 8 threads)
 - [x] **Shared non-tandem sequence** at ends (e.g. *Drosophila* HeT-A/TART arrays): with tandem arrays masked, the bp covered by 16-mers each window shares with same-kind windows on other sequences (partner ≥ 2 kb); class `shared_complex` if ≥ 50% of ends share with ≥ 2 others and ≥ 2× the interior fraction (no tandem cap); `ends_shared_same_orientation` for head-to-tail arrays. Against `ends.py` (minimap2 asm20 of TRF-masked windows): same call in 133/149 controls and 385/451 losses. Most `ends.py`-only calls are satellite-capped flies whose ends are 90–100% tandem; unmasked they share 80–100%, so `ends.py` was matching satellite remnants TRF left unmasked. Shorter k (12, 14) adds only interior noise. Sharing is common in controls too (`ends.py` 64/150), so it is not diagnostic of telomerase loss. No positive test in real data yet: *Drosophila* assemblies end before their HeT-A/TART arrays (0/10 share in either tool)
+- [x] `--threads` (default all cores).
 - [ ] Later: classify end-enriched families with rep (satellite vs TRAS/SART/HeT-A-type TE vs unknown); this also covers the interrupted Lepidoptera telomeres (phase 3).
 - [ ] **Validation set:** the D2/D3 species. Controls should come out `telomeric` (132/150 with the scripts); Diptera `terminal_satellite` (154/402); spiders open ends with non-telomeric overhangs (8/8); *Drosophila* shared non-tandem.
 - [ ] Then rerun D2/D3 over all 12 loss lineages with `tidk caps` and cite it in the paper's methods.

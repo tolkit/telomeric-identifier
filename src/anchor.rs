@@ -6,9 +6,10 @@
 //! end and strand that agree on a diagonal (read position minus bait
 //! position, within [`DIAGONAL_TOLERANCE`]) anchor the read to that end. The
 //! read position of the tip is extrapolated from the anchor nearest the tip.
-//! A read covering the tip (starting no more than [`TIP`] bp inside it)
-//! overhangs it by the bases beyond: the chromosome continues past the
-//! assembly end if many reads do. No alignment is done, so the tip is only
+//! Every anchored read is returned with its span along the bait; a read
+//! covering the tip (starting no more than [`TIP`] bp inside it) overhangs
+//! it by the bases beyond: the chromosome continues past the assembly end if
+//! many reads do. No alignment is done, so the tip is only
 //! placed to within the read's indels between it and the nearest anchor.
 
 use std::collections::HashMap;
@@ -68,6 +69,8 @@ pub(crate) struct Hit {
     pub(crate) end: usize,
     /// Bases of the read beyond the tip (negative: the read starts inside).
     pub(crate) overhang: i64,
+    /// Bait position of the read's inner end (from the tip).
+    pub(crate) span_end: i64,
     /// The overhang, read in the bait's orientation (outside towards the tip),
     /// if at least `keep` bp.
     pub(crate) sequence: Option<Vec<u8>>,
@@ -154,8 +157,8 @@ impl Baits {
         }
     }
 
-    /// Anchor a read to an end, if it covers the tip. Overhangs of at least
-    /// `keep` bp are returned with their sequence.
+    /// Anchor a read to an end. Overhangs of at least `keep` bp are returned
+    /// with their sequence.
     pub(crate) fn anchor(&self, read: &[u8], keep: usize) -> Option<Hit> {
         // hits per (end, same strand): (diagonal, bait position)
         let mut hits: HashMap<(u32, bool), Vec<(i64, u32)>> = HashMap::new();
@@ -189,9 +192,6 @@ impl Baits {
         }
         // the diagonal at the anchor nearest the tip
         let overhang = h.iter().min_by_key(|&&(_, p)| p).unwrap().0;
-        if overhang < -TIP {
-            return None;
-        }
         let sequence = (overhang >= keep as i64).then(|| {
             let n = overhang as usize;
             if same {
@@ -203,6 +203,7 @@ impl Baits {
         Some(Hit {
             end: end as usize,
             overhang,
+            span_end: len - overhang,
             sequence: sequence.map(|s| s.to_ascii_uppercase()),
         })
     }
@@ -244,7 +245,9 @@ mod tests {
     fn test_read_inside_bait_is_not_a_tip_read() {
         let bait = random_seq(30_000, 4);
         let baits = Baits::new(&[&bait]);
-        assert!(baits.anchor(&bait[5000..15_000], 1000).is_none());
+        let hit = baits.anchor(&bait[5000..15_000], 1000).unwrap();
+        assert_eq!((hit.overhang, hit.span_end), (-5000, 15_000));
+        assert!(hit.overhang < -TIP);
         // starting just inside the tip still covers it
         let hit = baits.anchor(&bait[100..10_000], 1000).unwrap();
         assert_eq!(hit.overhang, -100);

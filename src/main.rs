@@ -211,6 +211,11 @@ fn main() -> Result<()> {
                         .default_value("30000")
                 )
                 .arg(
+                    arg!(-t --threads [THREADS] "Threads to use (0: all available)")
+                        .value_parser(value_parser!(usize))
+                        .default_value("0")
+                )
+                .arg(
                     arg!(--"max-period" [MAX_PERIOD] "Longest tandem repeat period to look for, in bp")
                         .value_parser(value_parser!(usize))
                         .default_value("2000")

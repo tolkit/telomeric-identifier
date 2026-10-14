@@ -17,6 +17,9 @@
 //! one family is top at >= half the ends, covers >= 20% of those windows
 //! (median) and is >= 2x as frequent at ends as in the interior; otherwise
 //! `none`.
+//!
+//! Ends are flagged when an assembly gap lies near the tip, and (with
+//! `--reads`) when read depth just inside the tip is low.
 
 use crate::anchor::{self, Baits};
 use crate::ends::{self, EndsConfig, Side, Status};
@@ -58,6 +61,15 @@ const TELOMERE_MAX_OFFSET: usize = 1000;
 const MIN_OVERHANG: usize = 1000;
 /// An end needs this many tip reads for a call.
 const MIN_TIP_READS: usize = 3;
+/// Read depth is measured over [DEPTH_AT, DEPTH_AT + DEPTH_SPAN) bp inside
+/// the tip; an end below LOW_DEPTH x the median over ends is flagged.
+const DEPTH_AT: i64 = 2000;
+const DEPTH_SPAN: i64 = 1000;
+const LOW_DEPTH: f64 = 0.25;
+/// A run of at least this many Ns is an assembly gap; an end window with one
+/// within GAP_NEAR_TIP bp of the tip is flagged (its tip is a separate contig).
+const MIN_GAP_RUN: usize = 10;
+const GAP_NEAR_TIP: usize = 5000;
 /// Overhangs analysed for tandem repeats per end.
 const OVERHANGS_PER_END: usize = 50;
 /// An overhang's top family must cover this fraction of it.
@@ -178,6 +190,15 @@ pub fn caps(matches: &clap::ArgMatches) -> Result<()> {
         .map(|r| r.cloned().collect())
         .unwrap_or_default();
     let bait = *matches.get_one::<usize>("bait").expect("defaulted by clap");
+    let threads = *matches
+        .get_one::<usize>("threads")
+        .expect("defaulted by clap");
+    if threads > 0 {
+        rayon::ThreadPoolBuilder::new()
+            .num_threads(threads)
+            .build_global()
+            .context("could not set up the thread pool")?;
+    }
 
     // windows; telomeres are called later, once the unit is known. With
     // reads, also the terminal `bait` bp of each end, from the tip inwards,
@@ -269,6 +290,14 @@ pub fn caps(matches: &clap::ArgMatches) -> Result<()> {
 
     let (results, mut builder, summary) = analyse(&windows, unit.as_deref(), max_period);
 
+    let gap_ends = windows
+        .iter()
+        .filter(|w| w.kind.is_end() && gaps(&w.seq).1.is_some_and(|g| g < GAP_NEAR_TIP))
+        .count();
+    if gap_ends > 0 {
+        eprintln!("[+]\t{gap_ends} ends have an assembly gap within {GAP_NEAR_TIP}bp of the tip");
+    }
+
     create_dir_all(outdir)?;
     let prefix = format!("{}/{}", outdir.display(), output.display());
     let reads_summary = if reads.is_empty() {
@@ -301,6 +330,7 @@ pub fn caps(matches: &clap::ArgMatches) -> Result<()> {
         "unit_source": if unit.is_some() { unit_source } else { "none" },
         "sequences": windows.iter().filter(|w| w.kind == Kind::Start).count(),
         "telomeres": telomere_counts(&windows),
+        "ends_gap_near_tip": gap_ends,
         "summary": summary,
         "reads": reads_summary,
     });
@@ -329,6 +359,10 @@ struct EndReads {
     median_overhang: Option<i64>,
     state: &'static str,
     first_anchor: Option<usize>,
+    /// Reads spanning [DEPTH_AT, DEPTH_AT + DEPTH_SPAN) inside the tip, and
+    /// whether that is low for the assembly.
+    depth: usize,
+    low_coverage: bool,
     /// Overhangs analysed, their median tandem cover, and the family top in
     /// most of them (with how many).
     analysed: usize,
@@ -351,6 +385,7 @@ fn end_reads(
     let index = Baits::new(&baits.iter().map(|b| b.as_slice()).collect::<Vec<_>>());
     eprintln!("[+]	Anchoring reads to {} ends", baits.len());
     let mut overhangs: Vec<Vec<i64>> = vec![Vec::new(); baits.len()];
+    let mut depth = vec![0usize; baits.len()];
     let mut kept: Vec<Vec<(String, Vec<u8>)>> = vec![Vec::new(); baits.len()];
     let mut n_reads = 0usize;
     for path in reads {
@@ -364,8 +399,14 @@ fn end_reads(
                     .map(|h| (r.id().to_owned(), h))
             })
             .collect();
-        n_reads += hits.len();
         for (id, h) in hits {
+            if -h.overhang <= DEPTH_AT && h.span_end >= DEPTH_AT + DEPTH_SPAN {
+                depth[h.end] += 1;
+            }
+            if h.overhang < -anchor::TIP {
+                continue;
+            }
+            n_reads += 1;
             overhangs[h.end].push(h.overhang);
             if let Some(s) = h.sequence {
                 if kept[h.end].len() < OVERHANGS_PER_END {
@@ -413,6 +454,7 @@ fn end_reads(
         }
     }
 
+    let median_depth = median(depth.iter().map(|&d| d as f64).collect());
     let per_end: Vec<EndReads> = (0..baits.len())
         .map(|e| {
             let ov = &mut overhangs[e];
@@ -439,6 +481,8 @@ fn end_reads(
                 median_overhang: (!ov.is_empty()).then(|| ov[ov.len() / 2]),
                 state,
                 first_anchor: index.first_anchor[e],
+                depth: depth[e],
+                low_coverage: (depth[e] as f64) < LOW_DEPTH * median_depth,
                 analysed: tops[e].len(),
                 tandem_cover: (!tops[e].is_empty())
                     .then(|| median(tops[e].iter().map(|t| t.1).collect())),
@@ -452,7 +496,7 @@ fn end_reads(
     let mut f = LineWriter::new(File::create(format!("{prefix}.caps.reads.tsv"))?);
     writeln!(
         f,
-        "id\tside\ttip_reads\toverhang_reads\tmedian_overhang\tstate\tfirst_anchor\toverhangs_analysed\toverhang_tandem_cover\toverhang_family\toverhang_family_reads\toverhang_family_period\toverhang_family_telomeric\toverhang_family_consensus"
+        "id\tside\ttip_reads\toverhang_reads\tmedian_overhang\tstate\tfirst_anchor\toverhangs_analysed\toverhang_tandem_cover\toverhang_family\toverhang_family_reads\toverhang_family_period\toverhang_family_telomeric\toverhang_family_consensus\tdepth_{DEPTH_AT}\tlow_coverage"
     )?;
     let na = |x: Option<String>| x.unwrap_or_else(|| "NA".into());
     for r in &per_end {
@@ -470,7 +514,7 @@ fn end_reads(
         };
         writeln!(
             f,
-            "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{fam}",
+            "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{fam}\t{}\t{}",
             r.id,
             r.kind.name(),
             r.tip_reads,
@@ -480,6 +524,8 @@ fn end_reads(
             na(r.first_anchor.map(|m| m.to_string())),
             r.analysed,
             na(r.tandem_cover.map(|c| format!("{c:.3}"))),
+            r.depth,
+            r.low_coverage,
         )?;
     }
     eprintln!("[+]	Written {prefix}.caps.reads.tsv and .caps.overhang.fa");
@@ -510,6 +556,8 @@ fn summarise_reads(per_end: &[EndReads], families: &[Family]) -> serde_json::Val
         "mixed": count("mixed"),
         "closed": count("closed"),
         "no_reads": count("no_reads"),
+        "median_depth_near_tip": median(per_end.iter().map(|r| r.depth as f64).collect()),
+        "low_coverage_ends": per_end.iter().filter(|r| r.low_coverage).count(),
         "open_median_overhang": median(open.iter().filter_map(|r| r.median_overhang.map(|m| m as f64)).collect()),
         "open_overhang_tandem_cover_median": if covers.is_empty() { serde_json::Value::Null } else { median(covers).into() },
         "overhang_family": top.map(|(f, _)| f),
@@ -861,6 +909,24 @@ fn window_result(
     }
 }
 
+/// Assembly gaps (runs of >= [`MIN_GAP_RUN`] Ns) in a window: total gap bp
+/// and the start of the first gap (from the tip, for end windows).
+fn gaps(seq: &[u8]) -> (usize, Option<usize>) {
+    let (mut total, mut first, mut run) = (0, None, 0);
+    for (i, &b) in seq.iter().chain(std::iter::once(&b'A')).enumerate() {
+        if b == b'N' {
+            run += 1;
+        } else {
+            if run >= MIN_GAP_RUN {
+                total += run;
+                first.get_or_insert(i - run);
+            }
+            run = 0;
+        }
+    }
+    (total, first)
+}
+
 fn median(mut v: Vec<f64>) -> f64 {
     if v.is_empty() {
         return 0.0;
@@ -1009,7 +1075,7 @@ fn write_windows(
     let mut f = LineWriter::new(File::create(path)?);
     writeln!(
         f,
-        "id\tsequence_length\tkind\twindow_start\ttelomere\ttelomere_length\ttandem_cover\tarrays\tshared_partners\ttop_family\ttop_family_period\ttop_family_cover\ttop_family_telomeric\ttop_family_orientation\ttop_family_consensus"
+        "id\tsequence_length\tkind\twindow_start\ttelomere\ttelomere_length\ttandem_cover\tarrays\tshared_partners\ttop_family\ttop_family_period\ttop_family_cover\ttop_family_telomeric\ttop_family_orientation\ttop_family_consensus\tgap_bp\tfirst_gap"
     )?;
     for (w, r) in windows.iter().zip(results) {
         let (status, tlen) = match &w.telomere {
@@ -1044,9 +1110,11 @@ fn write_windows(
             }
             None => "NA\tNA\t0\tNA\tNA\tNA".into(),
         };
+        let (gap_bp, first_gap) = gaps(&w.seq);
+        let first_gap = first_gap.map_or("NA".into(), |g| g.to_string());
         writeln!(
             f,
-            "{}\t{}\t{}\t{}\t{status}\t{tlen}\t{:.3}\t{}\t{}\t{top}",
+            "{}\t{}\t{}\t{}\t{status}\t{tlen}\t{:.3}\t{}\t{}\t{top}\t{gap_bp}\t{first_gap}",
             w.id,
             w.sequence_length,
             w.kind.name(),
@@ -1215,6 +1283,16 @@ mod tests {
         assert_eq!(s["interior_shared_fraction"], 0.0);
         assert!(s["ends_shared_same_orientation"].as_f64().unwrap() > 0.99);
         assert_eq!(r[0].shared.partners, 10);
+    }
+
+    #[test]
+    fn test_gaps() {
+        let mut seq = random_seq(10_000, 9);
+        seq[3000..3005].fill(b'N'); // too short for a gap
+        seq[4000..4100].fill(b'N');
+        seq[9950..].fill(b'N');
+        assert_eq!(gaps(&seq), (150, Some(4000)));
+        assert_eq!(gaps(&random_seq(1000, 10)), (0, None));
     }
 
     #[test]
