@@ -611,7 +611,7 @@ fn low_complexity(mut code: u32, k: usize) -> bool {
 fn shared_sequence(windows: &[Window], arrays: &[&[Array]]) -> Vec<Shared> {
     // per window: (position, canonical k-mer, reads forward), and each
     // position's rank among unmasked bases (non-tandem coordinates)
-    let (kmers, ranks): (Vec<Vec<(usize, u32, bool)>>, Vec<Vec<u32>>) = windows
+    let (kmers, ranks): (Vec<Vec<WindowKmer>>, Vec<Vec<u32>>) = windows
         .par_iter()
         .zip(arrays)
         .map(|(w, arrays)| {
@@ -699,6 +699,9 @@ fn shared_sequence(windows: &[Window], arrays: &[&[Array]]) -> Vec<Shared> {
         })
         .collect()
 }
+
+/// A window k-mer: position, canonical code, reads forward.
+type WindowKmer = (usize, u32, bool);
 
 /// A k-mer shared by two end windows in the same orientation: its rank among
 /// unmasked (non-tandem) bases and its position, in each window.
