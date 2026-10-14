@@ -19,7 +19,11 @@
 //! `none`.
 //!
 //! Ends are flagged when an assembly gap lies near the tip, and (with
-//! `--reads`) when read depth just inside the tip is low.
+//! `--reads`) when read depth just inside the tip is low. Two more
+//! end-structure measures: whether the two ends of each sequence share their
+//! top family (against random pairing), and segments copied from the tip
+//! between ends (non-tandem sequence collinear from both tips, as left by
+//! break-induced replication or ALT-like end copying).
 
 use crate::anchor::{self, Baits};
 use crate::ends::{self, EndsConfig, Side, Status};
@@ -54,6 +58,15 @@ const SHARED_K: usize = 16;
 const MIN_SHARED: usize = 2000;
 const SHARED_MIN_PARTNERS: usize = 2;
 const SHARED_END_FRACTION: f64 = 0.5;
+/// Tip copies: shared k-mers collinear from both tips (same orientation read
+/// from the tip), in non-tandem coordinates (tandem arrays, which differ in
+/// length between copies, removed): starting within TIP_COPY_START bp of
+/// both, gaps up to TIP_COPY_GAP bp; a partner needs TIP_COPY_MIN bp of k-mer
+/// cover at >= TIP_COPY_DENSITY of the chain's extent (~ 97% identity).
+const TIP_COPY_START: usize = 5000;
+const TIP_COPY_GAP: usize = 5000;
+const TIP_COPY_MIN: usize = 5000;
+const TIP_COPY_DENSITY: f64 = 0.5;
 /// Telomere calls: minimum length and offset from the tip, as in `tidk ends`.
 const TELOMERE_MIN_LENGTH: usize = 200;
 const TELOMERE_MAX_OFFSET: usize = 1000;
@@ -130,6 +143,10 @@ struct Shared {
     /// Shared bp with those partners, in the same and opposite orientation.
     same: usize,
     opposite: usize,
+    /// End windows: partners sharing a segment copied from the tip, and the
+    /// longest such segment (bp from the tip).
+    tip_partners: usize,
+    tip_extent: usize,
 }
 
 struct TopFamily {
@@ -592,7 +609,9 @@ fn low_complexity(mut code: u32, k: usize) -> bool {
 /// way round in both windows; end windows read from the tip, so arrays
 /// oriented consistently towards the tip read the same way.
 fn shared_sequence(windows: &[Window], arrays: &[&[Array]]) -> Vec<Shared> {
-    let kmers: Vec<Vec<(usize, u32, bool)>> = windows
+    // per window: (position, canonical k-mer, reads forward), and each
+    // position's rank among unmasked bases (non-tandem coordinates)
+    let (kmers, ranks): (Vec<Vec<(usize, u32, bool)>>, Vec<Vec<u32>>) = windows
         .par_iter()
         .zip(arrays)
         .map(|(w, arrays)| {
@@ -600,7 +619,13 @@ fn shared_sequence(windows: &[Window], arrays: &[&[Array]]) -> Vec<Shared> {
             for a in arrays.iter() {
                 s[a.start..a.end].fill(b'N');
             }
-            tandem::kmer_codes(&s, SHARED_K)
+            let mut rank = Vec::with_capacity(s.len());
+            let mut r = 0u32;
+            for &b in &s {
+                rank.push(r);
+                r += u32::from(b != b'N');
+            }
+            let ks = tandem::kmer_codes(&s, SHARED_K)
                 .into_iter()
                 .enumerate()
                 .filter_map(|(i, c)| {
@@ -608,17 +633,18 @@ fn shared_sequence(windows: &[Window], arrays: &[&[Array]]) -> Vec<Shared> {
                     let rc = tandem::revcomp_code(c, SHARED_K);
                     (!low_complexity(c, SHARED_K)).then_some((i, c.min(rc), c <= rc))
                 })
-                .collect()
+                .collect();
+            (ks, rank)
         })
-        .collect();
-    // k-mer -> (window, reads forward), once per window
-    let mut index: HashMap<u32, Vec<(u32, bool)>, BuildHasherDefault<anchor::KmerHasher>> =
-        HashMap::default();
+        .unzip();
+    // k-mer -> (window, reads forward, first position), once per window
+    type Index = HashMap<u32, Vec<(u32, bool, u32)>, BuildHasherDefault<anchor::KmerHasher>>;
+    let mut index: Index = HashMap::default();
     for (w, ks) in kmers.iter().enumerate() {
         let mut seen = HashSet::new();
-        for &(_, c, f) in ks {
+        for &(pos, c, f) in ks {
             if seen.insert(c) {
-                index.entry(c).or_default().push((w as u32, f));
+                index.entry(c).or_default().push((w as u32, f, pos as u32));
             }
         }
     }
@@ -628,8 +654,11 @@ fn shared_sequence(windows: &[Window], arrays: &[&[Array]]) -> Vec<Shared> {
             let wa = &windows[a];
             // per partner: covered bp, end of the last k-mer counted, same, opposite
             let mut cover: HashMap<u32, [usize; 4]> = HashMap::new();
+            // end windows: same-orientation hits per partner, for tip copies,
+            // as (rank in a, rank in b, position in a, position in b)
+            let mut hits: HashMap<u32, Vec<TipHit>> = HashMap::new();
             for &(pos, c, f) in &kmers[a] {
-                for &(b, fb) in index.get(&c).into_iter().flatten() {
+                for &(b, fb, pb) in index.get(&c).into_iter().flatten() {
                     let wb = &windows[b as usize];
                     if b as usize == a || wb.kind.is_end() != wa.kind.is_end() || wb.id == wa.id {
                         continue;
@@ -639,18 +668,98 @@ fn shared_sequence(windows: &[Window], arrays: &[&[Array]]) -> Vec<Shared> {
                     e[0] += add;
                     e[1] = pos + SHARED_K;
                     e[if f == fb { 2 } else { 3 }] += add;
+                    if wa.kind.is_end() && f == fb {
+                        let pb = pb as usize;
+                        hits.entry(b).or_default().push(TipHit {
+                            ra: ranks[a][pos] as usize,
+                            rb: ranks[b as usize][pb] as usize,
+                            pa: pos,
+                            pb,
+                        });
+                    }
                 }
             }
-            cover
-                .values()
-                .filter(|e| e[0] >= MIN_SHARED)
-                .fold(Shared::default(), |s, e| Shared {
-                    partners: s.partners + 1,
-                    same: s.same + e[2],
-                    opposite: s.opposite + e[3],
-                })
+            let mut shared =
+                cover
+                    .values()
+                    .filter(|e| e[0] >= MIN_SHARED)
+                    .fold(Shared::default(), |s, e| Shared {
+                        partners: s.partners + 1,
+                        same: s.same + e[2],
+                        opposite: s.opposite + e[3],
+                        ..s
+                    });
+            for h in hits.values() {
+                if let Some(extent) = tip_copy(h) {
+                    shared.tip_partners += 1;
+                    shared.tip_extent = shared.tip_extent.max(extent);
+                }
+            }
+            shared
         })
         .collect()
+}
+
+/// A k-mer shared by two end windows in the same orientation: its rank among
+/// unmasked (non-tandem) bases and its position, in each window.
+struct TipHit {
+    ra: usize,
+    rb: usize,
+    pa: usize,
+    pb: usize,
+}
+
+/// The extent (bp from the tip) of a segment copied from the tip between two
+/// end windows, from their shared k-mers in order of window a. Chains run in
+/// non-tandem coordinates, so tandem arrays of different length in the two
+/// copies cost nothing: increasing in both, starting within
+/// [`TIP_COPY_START`] non-tandem bp of both tips, with gaps up to
+/// [`TIP_COPY_GAP`]. A chain counts if its k-mer cover is >= [`TIP_COPY_MIN`]
+/// and >= [`TIP_COPY_DENSITY`] of its non-tandem extent.
+fn tip_copy(hits: &[TipHit]) -> Option<usize> {
+    const MAX_CHAINS: usize = 8;
+    struct Chain {
+        ra: usize,
+        rb: usize,
+        cover: usize,
+        extent: usize,
+    }
+    let mut chains: Vec<Chain> = Vec::new();
+    for h in hits {
+        let mut extended = false;
+        for c in chains.iter_mut() {
+            if h.ra > c.ra
+                && h.rb > c.rb
+                && h.ra - c.ra <= TIP_COPY_GAP
+                && h.rb - c.rb <= TIP_COPY_GAP
+            {
+                c.cover += (h.ra - c.ra).min(SHARED_K);
+                (c.ra, c.rb) = (h.ra, h.rb);
+                c.extent = h.pa.min(h.pb) + SHARED_K;
+                extended = true;
+            }
+        }
+        if !extended
+            && h.ra <= TIP_COPY_START
+            && h.rb <= TIP_COPY_START
+            && chains.len() < MAX_CHAINS
+        {
+            chains.push(Chain {
+                ra: h.ra,
+                rb: h.rb,
+                cover: SHARED_K,
+                extent: h.pa.min(h.pb) + SHARED_K,
+            });
+        }
+    }
+    chains
+        .into_iter()
+        .filter(|c| {
+            c.cover >= TIP_COPY_MIN
+                && c.cover as f64 >= TIP_COPY_DENSITY * (c.ra.min(c.rb) + SHARED_K) as f64
+        })
+        .map(|c| c.extent)
+        .max()
 }
 
 /// Tandem arrays, families and the end-enrichment summary for a set of
@@ -974,11 +1083,49 @@ fn summarise(
     let (same, opposite) = ends.iter().fold((0, 0), |(s, o), &i| {
         (s + results[i].shared.same, o + results[i].shared.opposite)
     });
+    // segments copied from the tip between ends
+    let tip_ends: Vec<usize> = ends
+        .iter()
+        .copied()
+        .filter(|&i| results[i].shared.tip_partners > 0)
+        .collect();
+    // do the two ends of a sequence share their top family? Expected from
+    // family frequencies among ends with a top family (random pairing)
+    let mut by_seq: HashMap<&str, [Option<usize>; 2]> = HashMap::new();
+    for &i in &ends {
+        let k = usize::from(windows[i].kind == Kind::End);
+        by_seq.entry(windows[i].id.as_str()).or_default()[k] = top_of(i);
+    }
+    let both: Vec<(usize, usize)> = by_seq
+        .values()
+        .filter_map(|p| Some((p[0]?, p[1]?)))
+        .collect();
+    let mut fam_counts: HashMap<usize, usize> = HashMap::new();
+    for &(a, b) in &both {
+        *fam_counts.entry(a).or_default() += 1;
+        *fam_counts.entry(b).or_default() += 1;
+    }
+    let n_top = 2 * both.len();
+    let p_same = if n_top < 2 {
+        0.0
+    } else {
+        fam_counts
+            .values()
+            .map(|&c| (c * (c - 1)) as f64)
+            .sum::<f64>()
+            / (n_top * (n_top - 1)) as f64
+    };
     let shared_json = serde_json::json!({
         "shared_ends": shared,
         "ends_shared_fraction": sh_end,
         "interior_shared_fraction": sh_int,
         "ends_shared_same_orientation": if same + opposite == 0 { serde_json::Value::Null } else { frac(same, same + opposite).into() },
+        "tip_copied_ends": tip_ends.len(),
+        "tip_copied_pairs": tip_ends.iter().map(|&i| results[i].shared.tip_partners).sum::<usize>() / 2,
+        "tip_copied_max_extent": tip_ends.iter().map(|&i| results[i].shared.tip_extent).max().unwrap_or(0),
+        "sequences_both_ends_with_top_family": both.len(),
+        "sequences_same_top_family_both_ends": both.iter().filter(|(a, b)| a == b).count(),
+        "sequences_same_top_family_expected": p_same * both.len() as f64,
     });
     let ends_cover = median(ends.iter().map(|&i| results[i].tandem_cover).collect());
     let interior_cover = median(interior.iter().map(|&i| results[i].tandem_cover).collect());
@@ -1075,7 +1222,7 @@ fn write_windows(
     let mut f = LineWriter::new(File::create(path)?);
     writeln!(
         f,
-        "id\tsequence_length\tkind\twindow_start\ttelomere\ttelomere_length\ttandem_cover\tarrays\tshared_partners\ttop_family\ttop_family_period\ttop_family_cover\ttop_family_telomeric\ttop_family_orientation\ttop_family_consensus\tgap_bp\tfirst_gap"
+        "id\tsequence_length\tkind\twindow_start\ttelomere\ttelomere_length\ttandem_cover\tarrays\tshared_partners\ttop_family\ttop_family_period\ttop_family_cover\ttop_family_telomeric\ttop_family_orientation\ttop_family_consensus\tgap_bp\tfirst_gap\ttip_copy_partners\ttip_copy_extent"
     )?;
     for (w, r) in windows.iter().zip(results) {
         let (status, tlen) = match &w.telomere {
@@ -1114,14 +1261,16 @@ fn write_windows(
         let first_gap = first_gap.map_or("NA".into(), |g| g.to_string());
         writeln!(
             f,
-            "{}\t{}\t{}\t{}\t{status}\t{tlen}\t{:.3}\t{}\t{}\t{top}\t{gap_bp}\t{first_gap}",
+            "{}\t{}\t{}\t{}\t{status}\t{tlen}\t{:.3}\t{}\t{}\t{top}\t{gap_bp}\t{first_gap}\t{}\t{}",
             w.id,
             w.sequence_length,
             w.kind.name(),
             w.position,
             r.tandem_cover,
             r.arrays.len(),
-            r.shared.partners
+            r.shared.partners,
+            r.shared.tip_partners,
+            r.shared.tip_extent,
         )?;
     }
     Ok(())
@@ -1201,13 +1350,26 @@ mod tests {
     /// Windows for `n` chromosomes, the ends from `cap(chromosome)` followed
     /// by random sequence, read from the tip inwards; one random interior window each.
     fn windows(n: usize, cap: impl Fn(usize) -> Vec<u8>) -> Vec<Window> {
+        windows_ends(n, &cap, &cap)
+    }
+
+    /// As [`windows`], with different caps at the start and end of each chromosome.
+    fn windows_ends(
+        n: usize,
+        start: impl Fn(usize) -> Vec<u8>,
+        end: impl Fn(usize) -> Vec<u8>,
+    ) -> Vec<Window> {
         let mut out = Vec::new();
         for c in 0..n {
             for (k, kind) in [Kind::Start, Kind::End, Kind::Interior]
                 .into_iter()
                 .enumerate()
             {
-                let mut seq = if kind.is_end() { cap(c) } else { Vec::new() };
+                let mut seq = match kind {
+                    Kind::Start => start(c),
+                    Kind::End => end(c),
+                    Kind::Interior => Vec::new(),
+                };
                 let fill = 20_000 - seq.len();
                 seq.extend(random_seq(fill, (c * 3 + k) as u64 + 100));
                 out.push(Window {
@@ -1283,6 +1445,102 @@ mod tests {
         assert_eq!(s["interior_shared_fraction"], 0.0);
         assert!(s["ends_shared_same_orientation"].as_f64().unwrap() > 0.99);
         assert_eq!(r[0].shared.partners, 10);
+    }
+
+    /// `copies` copies of a random unit, each with one substitution.
+    fn satellite(seed: u64, period: usize, copies: usize, salt: usize) -> Vec<u8> {
+        let unit = random_seq(period, seed);
+        (0..copies)
+            .flat_map(|i| {
+                let mut copy = unit.clone();
+                copy[(salt * 7 + i * 13) % period] = b'A';
+                copy
+            })
+            .collect()
+    }
+
+    #[test]
+    fn test_end_pairing() {
+        // one satellite at every start, another at every end (as spider
+        // centromeric vs distal ends): the two ends never share a family
+        let w = windows_ends(
+            6,
+            |c| satellite(1, 180, 30, c),
+            |c| satellite(2, 230, 30, c),
+        );
+        let (_, _, s) = analyse(&w, None, 2000);
+        assert_eq!(s["sequences_both_ends_with_top_family"], 6);
+        assert_eq!(s["sequences_same_top_family_both_ends"], 0);
+        let expected = s["sequences_same_top_family_expected"].as_f64().unwrap();
+        assert!((expected - 6.0 * 60.0 / 132.0).abs() < 1e-9);
+        // a telomere at every end: all pairs share it
+        let w = windows(6, |_| b"CCCTAA".repeat(1000));
+        let (_, _, s) = analyse(&w, Some("AACCCT"), 2000);
+        assert_eq!(s["sequences_same_top_family_both_ends"], 6);
+    }
+
+    #[test]
+    fn test_tip_copy() {
+        // the start of chr0 copied onto the end of chr3: 12 kb from the tip,
+        // ~0.5% substitutions, and an array of different length in each copy
+        let segment = random_seq(12_000, 7);
+        let copy = |len: usize, salt: usize| {
+            let mut s = segment[..6000].to_vec();
+            s.extend(satellite(8, 170, len, salt));
+            s.extend(&segment[6000..]);
+            for i in (salt * 37..s.len()).step_by(211) {
+                s[i] = b"ACGT"[(i + 1) % 4];
+            }
+            s
+        };
+        let w = windows_ends(
+            6,
+            |c| {
+                if c == 0 {
+                    copy(10, 1)
+                } else {
+                    random_seq(3000, 60 + c as u64)
+                }
+            },
+            |c| {
+                if c == 3 {
+                    copy(14, 2)
+                } else {
+                    random_seq(3000, 80 + c as u64)
+                }
+            },
+        );
+        let (r, _, s) = analyse(&w, None, 2000);
+        assert_eq!(s["tip_copied_ends"], 2);
+        assert_eq!(s["tip_copied_pairs"], 1);
+        assert_eq!(
+            (r[0].shared.tip_partners, r[10].shared.tip_partners),
+            (1, 1)
+        );
+        let extent = s["tip_copied_max_extent"].as_u64().unwrap();
+        assert!((11_000..=14_500).contains(&extent), "{extent}");
+        // shared but not from the tip: the element 8 kb inside one end
+        let element = random_seq(8000, 9);
+        let w = windows_ends(
+            6,
+            |c| {
+                if c == 0 {
+                    element.clone()
+                } else {
+                    random_seq(3000, 60 + c as u64)
+                }
+            },
+            |c| {
+                if c == 3 {
+                    [random_seq(8000, 10), element.clone()].concat()
+                } else {
+                    random_seq(3000, 80 + c as u64)
+                }
+            },
+        );
+        let (r, _, s) = analyse(&w, None, 2000);
+        assert_eq!(r[0].shared.partners, 1);
+        assert_eq!(s["tip_copied_ends"], 0);
     }
 
     #[test]

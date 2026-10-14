@@ -164,6 +164,69 @@ Options:
   -V, --version                    Print version
 ```
 
+### Caps
+
+`tidk caps` describes what is at the chromosome ends of an assembly, with or without a canonical telomere: for lineages that lost telomerase (e.g. flies, spiders), and as a check on telomeric ones. Each sequence gets a window at both ends, read from the tip inwards so all ends are comparable, and `--interior` windows (default 3) as a baseline.
+
+- **Telomere calls** at each end, as in `tidk ends`, if the unit is given with `--string` or can be discovered.
+- **End-enriched tandem repeats.** A built-in tandem repeat finder (periods 1 bp to `--max-period`, default 2kb, tolerant of divergent copies) finds the arrays in every window, and groups them into families across the assembly by shared k-mers, free of rotation and strand. The assembly is classed `telomeric` or `terminal_satellite` when one family is top at ≥ half the ends, covers ≥ 20% of those windows and is ≥ 2× as frequent at ends as in the interior.
+- **Shared non-tandem sequence** between ends (e.g. retrotransposon arrays), with tandem arrays masked; `shared_complex` when ≥ half the ends share ≥ 2kb with ≥ 2 other ends, at ≥ 2× the interior rate and no tandem cap.
+- **End pairing:** whether the two ends of each sequence share their top family, against random pairing. Spider chromosomes almost never do (a centromeric satellite at one end of acrocentric chromosomes, other families at the other end); a telomere or a fly satellite cap is shared by both ends.
+- **Segments copied from the tip** between ends: non-tandem sequence collinear from both tips (≥ 5kb of shared 16-mers at ≥ 50% density, roughly ≥ 97% identity), counted in non-tandem coordinates so tandem arrays of different length in the two copies do not break it. This is the footprint of break-induced replication or ALT-like copying of one end onto another.
+- **Assembly gaps** (runs of ≥ 10 Ns) near the tip: the tip is then a separately placed contig.
+- **Reads past the ends** (`--reads`, HiFi or ONT from the same individual). Reads are anchored to the terminal `--bait` bp of each end (default 30kb) by k-mers unique to one end, without alignment. Each end is `open` (most tip reads run ≥ 1kb past the tip), `closed`, `mixed` or `no_reads`; up to 50 overhangs per end go through the same tandem finder and families as the windows. Read depth 2-3kb inside the tip is flagged `low_coverage` below a quarter of the median over ends. Assemblies often trim telomeres, so telomeric ends can look open too: what matters is what the overhangs carry (the telomere in Lepidoptera, a satellite in some flies), not whether there are any.
+
+**Window size.** The default 20kb window suits telomeric assemblies. For lineages without telomerase use `-w 100000`: end satellites can run tens of kb from the tip (10-98kb at spider centromeric ends), and copied end segments up to the whole window. Use `--include`/`--exclude` to choose the chromosomes (for Tree of Life assemblies: `--include '^SUPER_' --exclude unloc`).
+
+Files written:
+
+- `<output>.caps.tsv`: every window with its telomere call, tandem cover, top family (period, cover, orientation towards the tip, consensus), shared-sequence partners, gaps and tip copies (partners, extent from the tip).
+- `<output>.caps.families.tsv`: families at ends, with the ends where each is top and its interior fraction.
+- `<output>.caps.json`: the class and summary (top family, end pairing, sharing, tip copies, gaps, and with `--reads` the end states and overhang families).
+- With `--reads`: `<output>.caps.reads.tsv` (per end: tip reads, overhangs, state, depth, overhang family) and `<output>.caps.overhang.fa`.
+
+For example:
+`tidk caps --include '^SUPER_' --exclude unloc -w 100000 --reads reads1.fa.gz reads2.fa.gz -t 8 -o qqXysAcer qqXysAcer1.1.fa.gz` describes the chromosome ends of a crab spider assembly, with HiFi reads.
+
+```
+Characterise what is at chromosome ends, with or without a canonical telomere: telomere calls, end-enriched tandem repeat families, and their orientation.
+
+Usage: tidk caps [OPTIONS] --output <OUTPUT> <FASTA>
+
+Arguments:
+  <FASTA>  The input fasta file
+
+Options:
+  -s, --string [<STRING>]
+          The telomeric repeat unit, in any rotation or orientation. Discovered from the sequence ends if not given.
+  -w, --window [<WINDOW>]
+          Length of each end and interior window, in bp. Use 100000 for lineages without telomerase, whose end satellites can run tens of kb from the tip [default: 20000]
+      --interior [<INTERIOR>]
+          Interior windows per sequence, evenly spaced, as a baseline for the ends [default: 3]
+      --include [<REGEX>]
+          Only use sequences whose ID matches this regular expression (e.g. '^SUPER_' for Tree of Life chromosomes)
+      --exclude [<REGEX>]
+          Skip sequences whose ID matches this regular expression (e.g. 'unloc')
+      --reads <READS>...
+          Long reads (HiFi or ONT, fasta, may be gzipped) from the same individual: do reads run past each assembly end, and what tandem repeat do the overhangs carry?
+      --bait [<BAIT>]
+          With --reads, length of each end used to anchor reads, in bp [default: 30000]
+  -t, --threads [<THREADS>]
+          Threads to use (0: all available) [default: 0]
+      --max-period [<MAX_PERIOD>]
+          Longest tandem repeat period to look for, in bp [default: 2000]
+      --min-sequence-length [<MIN_SEQUENCE_LENGTH>]
+          Skip sequences shorter than this, in bp (e.g. unplaced scaffolds) [default: 1000000]
+  -o, --output <OUTPUT>
+          Output filename prefix
+  -d, --dir [<DIR>]
+          Output directory to write files to [default: .]
+  -h, --help
+          Print help
+  -V, --version
+          Print version
+```
+
 ### Find
 
 `tidk find` will take an input clade, and match the known or putative telomeric repeat for that clade (or repeats plural) and search the genome. Now uses a custom curated telomeric repeat database. As more telomeric repeats are found and added, the dictionary of sequences used will increase.

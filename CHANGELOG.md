@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- `tidk caps`: what is at the chromosome ends, with or without a canonical telomere. Per end
+  and interior window: telomere call, tandem arrays from a built-in finder grouped into
+  families across the assembly, shared non-tandem sequence, assembly gaps near the tip; per
+  assembly: class (`telomeric`, `terminal_satellite`, `shared_complex`, `none`), whether the
+  two ends of each sequence share their top family, and segments copied from the tip between
+  ends. With `--reads`, long reads past each end (open/closed), the repeats their overhangs
+  carry, and read depth near the tip. `-w 100000` is recommended for lineages without
+  telomerase.
+
 ## 0.3.0
 
 ### Breaking changes
