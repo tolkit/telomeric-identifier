@@ -79,10 +79,11 @@ TSV per chromosome end, a species summary and JSON. Sections:
 - [x] `--threads` (default all cores).
 - [x] **End pairing**: whether the two ends of each sequence share their top family, against random pairing from family frequencies (`sequences_same_top_family_both_ends` vs `_expected`). Spiders 0 of 12-13 (expected 0.3-3.6): a centromeric family at one end, others at the other.
 - [x] **Segments copied from the tip** between ends (`tip_copy_partners`, `tip_copy_extent`; `tip_copied_ends`/`_pairs`): shared 16-mers chained collinearly from both tips in non-tandem coordinates (arrays of different length in the two copies cost nothing), ≥ 5 kb cover at ≥ 50% density. Against the spider minimap2 search (`d2_ends/spiders/terminal_dups.py`) at `-w 100000`: *Xysticus* the same pair (33 vs 93 kb extent), *Meta* 6 pairs (minimap2 2, both found), *Clubiona comta* 7 (8), *Phylloneta* 5 (13). 12-22 s, < 1 GB per spider assembly.
-- [x] README section; `-w 100000` recommended for lineages without telomerase.
+- [x] README section. The default 20 kb window for the class; `-w 100000` only for end pairing and tip copies (at 100 kb the cover rule misses telomeres).
+- [x] A unit discovered without `--unit` must have a G run (GG/CC): AT microsatellites (AAAT, ACATAT, AGAT) were taken as the telomere in 204/453 loss species, calling 11 Diptera telomeric (now 1).
 - [ ] Later: classify end-enriched families with rep (satellite vs TRAS/SART/HeT-A-type TE vs unknown); this also covers the interrupted Lepidoptera telomeres (phase 3).
-- [ ] **Validation set:** the D2/D3 species. Controls should come out `telomeric` (132/150 with the scripts); Diptera `terminal_satellite` (154/402); spiders open ends with non-telomeric overhangs (8/8); *Drosophila* shared non-tandem.
-- [ ] Then rerun D2/D3 over all 12 loss lineages with `tidk caps` and cite it in the paper's methods.
+- [x] **Validation set** (`tol_telomeres/shifts/d2_ends/caps/validate_runs.py`, `lineages.tsv`): controls have the telomere as top end family in 131/150 (scripts 132; the `telomeric` class needs 20% window cover, so 45/150); Diptera `terminal_satellite` 146/402 (scripts 143), same class 313/402; spiders 36/36 with open ends have non-telomeric overhangs; the 13 single-lineage losses all agree. *Drosophila* 0/9 `shared_complex`: their assemblies end before the HeT-A/TART arrays, so this is untestable.
+- [x] Rerun over all 12 loss lineages (v4/v5 runs) and cited in the paper's methods.
 
 ## Phase 4: comparative telomere evolution paper
 
