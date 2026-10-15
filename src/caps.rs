@@ -821,21 +821,32 @@ fn revcomp(seq: &[u8]) -> Vec<u8> {
         .collect()
 }
 
-/// The most abundant candidate telomeric repeat unit at the ends, if any.
+/// Does a unit read round in a circle have a G run on one strand (GG, or CC on
+/// the other)? Telomeric repeats do; AT-rich microsatellites (AAAT, ACAT) don't.
+fn has_g_run(unit: &str) -> bool {
+    let u = unit.to_ascii_uppercase();
+    let circular = format!("{u}{}", &u[..1.min(u.len())]);
+    circular.contains("GG") || circular.contains("CC")
+}
+
+/// The most abundant candidate telomeric repeat unit at the ends with a G
+/// run, if any.
 fn discover_unit(windows: &[Window]) -> Result<Option<String>> {
     let ends: Vec<(String, &[u8])> = windows
         .iter()
         .filter(|w| w.kind.is_end())
         .map(|w| (format!("{}:{}", w.id, w.kind.name()), w.seq.as_slice()))
         .collect();
-    Ok(explore::top_unit(
+    Ok(explore::top_units(
         &ends,
         DISCOVERY_MINIMUM,
         DISCOVERY_MAXIMUM,
         DISCOVERY_THRESHOLD,
         true,
     )?
-    .map(|(u, _)| u))
+    .into_iter()
+    .map(|(u, _)| u)
+    .find(|u| has_g_run(u)))
 }
 
 /// Families of tandem arrays, built up array by array.
@@ -1568,6 +1579,20 @@ mod tests {
         seq[9950..].fill(b'N');
         assert_eq!(gaps(&seq), (150, Some(4000)));
         assert_eq!(gaps(&random_seq(1000, 10)), (0, None));
+    }
+
+    #[test]
+    fn test_discovered_unit_needs_a_g_run() {
+        assert!(has_g_run("AACCCT"));
+        assert!(has_g_run("TTAGG"));
+        assert!(has_g_run("GTTAG"));
+        assert!(!has_g_run("AAAT"));
+        assert!(!has_g_run("ACATAT"));
+        // an AT microsatellite at every end is not taken as the telomere
+        let w = windows(6, |_| b"AAAT".repeat(500));
+        assert_eq!(discover_unit(&w).unwrap(), None);
+        let w = windows(6, |_| b"CCTAA".repeat(500));
+        assert!(discover_unit(&w).unwrap().is_some());
     }
 
     #[test]

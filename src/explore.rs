@@ -561,6 +561,19 @@ pub(crate) fn top_unit(
     threshold: usize,
     error_tolerant: bool,
 ) -> Result<Option<(String, Option<f64>)>> {
+    Ok(top_units(sequences, minimum, maximum, threshold, error_tolerant)?
+        .into_iter()
+        .next())
+}
+
+/// As [`top_unit()`], every candidate unit, most abundant first.
+pub(crate) fn top_units(
+    sequences: &[(String, &[u8])],
+    minimum: usize,
+    maximum: usize,
+    threshold: usize,
+    error_tolerant: bool,
+) -> Result<Vec<(String, Option<f64>)>> {
     let mut positions = RepeatPositions::new();
     for (name, sequence) in sequences {
         for length in minimum..=maximum {
@@ -569,10 +582,13 @@ pub(crate) fn top_unit(
         }
     }
     let estimates = get_telomeric_repeat_estimates(&mut positions)?;
-    Ok(estimates.into_iter().next().map(|e| {
-        let minor = e.minor_strand_proportion();
-        (e.unit, minor)
-    }))
+    Ok(estimates
+        .into_iter()
+        .map(|e| {
+            let minor = e.minor_strand_proportion();
+            (e.unit, minor)
+        })
+        .collect())
 }
 
 /// check if a sequence looks like it is not

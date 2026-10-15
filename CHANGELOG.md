@@ -13,6 +13,8 @@
   carry, and read depth near the tip; reads that diverge from the assembly before the tip
   are not counted. Use the default window for the class and `-w 100000` for end pairing and
   tip copies.
+  Without `--unit`, the unit discovered at the ends must have a G run (GG/CC), so AT-rich
+  microsatellites are not taken as the telomere.
 
 ## 0.3.0
 
