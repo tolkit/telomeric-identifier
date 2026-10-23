@@ -1,5 +1,5 @@
 use crate::{clades, open_fasta_reader, utils, SubCommand};
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use std::fs::{create_dir_all, File};
 use std::io::LineWriter;
 use std::io::Write;
@@ -12,8 +12,11 @@ use std::str;
 /// Finder uses the clade specific telomere sequence and queries against the genome.
 pub fn finder(matches: &clap::ArgMatches, sc: SubCommand) -> Result<()> {
     // print table of telomeric sequences
+    let min_species = *matches
+        .get_one::<u64>("min_species")
+        .expect("errored by clap") as usize;
     if matches.get_flag("print") {
-        clades::print_table()?;
+        clades::print_table(min_species)?;
         process::exit(1);
     }
 
@@ -28,7 +31,12 @@ pub fn finder(matches: &clap::ArgMatches, sc: SubCommand) -> Result<()> {
         .expect("errored by clap")
         .clone();
 
-    let clade_info = clades::return_telomere_sequence(clade)?;
+    let clade_info = clades::return_telomere_sequence(clade.clone(), min_species)?;
+    if clade_info.length == 0 {
+        bail!(
+            "No telomeric repeat of {clade} is found in at least {min_species} species. Lower --min-species."
+        );
+    }
 
     if clade_info.length == 1 {
         eprintln!(

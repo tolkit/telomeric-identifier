@@ -85,7 +85,10 @@ impl SubCommand {
                         .get_one::<PathBuf>("fasta")
                         .expect("errored by clap");
                     let clade = matches.get_one::<String>("clade").expect("errored by clap");
-                    let clade_info = clades::return_telomere_sequence(clade.clone());
+                    let min_species = *matches
+                        .get_one::<u64>("min_species")
+                        .expect("errored by clap") as usize;
+                    let clade_info = clades::return_telomere_sequence(clade.clone(), min_species);
                     let window_size = *matches.get_one::<usize>("window").expect("errored by clap");
 
                     let file_name = format!(
@@ -103,6 +106,7 @@ Date: {}
     Input fasta: {}
     Window size: {}
     Clade chosen: {}
+    Minimum species per repeat: {}
     Telomeric repeats queried: {}"#,
                         crate_version!(),
                         file_name,
@@ -110,6 +114,7 @@ Date: {}
                         input_fasta.display(),
                         window_size,
                         clade,
+                        min_species,
                         clade_info?.seq.get_inner().join(", ")
                     );
 

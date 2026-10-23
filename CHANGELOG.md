@@ -15,6 +15,9 @@
   tip copies.
   Without `--unit`, the unit discovered at the ends must have a G run (GG/CC), so AT-rich
   microsatellites are not taken as the telomere.
+- `tidk find --min-species N` (`-m`): only search repeats found in at least N species of the clade
+  (also applies to `--print`). The database has a new `Species count` column; rows without one
+  count as one species, and older tidk versions ignore the column.
 
 ### Changed
 

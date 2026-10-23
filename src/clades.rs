@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{bail, Result};
 use std::fmt::{self, Display};
 use tabled::{
     settings::{
@@ -116,8 +116,9 @@ pub fn get_clades() -> Result<Vec<String>> {
 }
 
 /// A function to get a telomeric repeat sequence
-/// given a clade name.
-pub fn return_telomere_sequence(clade: String) -> Result<TelomereSeq> {
+/// given a clade name, keeping repeats found in at least
+/// `min_species` species of the clade.
+pub fn return_telomere_sequence(clade: String, min_species: usize) -> Result<TelomereSeq> {
     let path = get_database_path()?;
     // read the csv file
     let mut rdr = csv::Reader::from_path(path)?;
@@ -130,7 +131,10 @@ pub fn return_telomere_sequence(clade: String) -> Result<TelomereSeq> {
     for result in rdr.deserialize() {
         let record: TelomereRepeatRow = result?;
         // the same repeat on several rows (one per species) is searched once
-        if record.order == clade && !telomere_seq.seq.0.contains(&record.telomeric_repeat) {
+        if record.order == clade
+            && record.species_count.unwrap_or(1) >= min_species
+            && !telomere_seq.seq.0.contains(&record.telomeric_repeat)
+        {
             telomere_seq.push(record.telomeric_repeat);
         }
     }
@@ -145,12 +149,18 @@ pub fn return_telomere_sequence(clade: String) -> Result<TelomereSeq> {
 
 /// Pretty print a table containing all the information about
 /// telomeric repeats that we currently have.
-pub fn print_table() -> Result<()> {
+pub fn print_table(min_species: usize) -> Result<()> {
     let mut clade_vec = Vec::new();
 
     let clades = get_clades()?;
     for clade in clades {
-        clade_vec.push(return_telomere_sequence(clade)?);
+        let ts = return_telomere_sequence(clade, min_species)?;
+        if ts.length > 0 {
+            clade_vec.push(ts);
+        }
+    }
+    if clade_vec.is_empty() {
+        bail!("no clade has a repeat found in at least {min_species} species");
     }
 
     eprintln!(

@@ -24,6 +24,10 @@ pub struct TelomereRepeatRow {
     pub notes: String,
     #[serde(rename = "Ref")]
     pub reference: String,
+    /// How many species in the order carry this repeat. Missing
+    /// (older databases) or empty (older rows) counts as one.
+    #[serde(rename = "Species count", default)]
+    pub species_count: Option<usize>,
 }
 
 // Function to get the database path

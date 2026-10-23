@@ -52,6 +52,12 @@ fn main() -> Result<()> {
                         .value_parser(value_parser!(PathBuf))
                 )
                 .arg(
+                    arg!(-m --"min-species" <N> "Only search repeats found in at least this many species of the clade (database rows without a count are one species)")
+                        .id("min_species")
+                        .value_parser(clap::value_parser!(u64).range(1..))
+                        .default_value("1")
+                )
+                .arg(
                     arg!(-p --print "Print a table of clades, along with their telomeric sequences")
                         .action(clap::ArgAction::SetTrue)
                 )
