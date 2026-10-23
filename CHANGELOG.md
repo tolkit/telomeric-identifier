@@ -16,6 +16,15 @@
   Without `--unit`, the unit discovered at the ends must have a G run (GG/CC), so AT-rich
   microsatellites are not taken as the telomere.
 
+### Changed
+
+- Clade database (`clades/curated.csv`, fetched by `tidk build`): rebuilt from the confident calls
+  of the ToL-wide tidk 0.3.0 run (2,650 species, 206 orders, 301 order-repeat rows, up from 52
+  orders). One row per order and repeat. Old entries kept only for orders with no new call
+  (Symphypleona); old calls that disagree were dropped (e.g. Crassiclitellata AAGGAC, now AACCCT).
+- `tidk find -c`: each repeat in a clade is searched once, and the clade list has no duplicates
+  wherever they sit in the database.
+
 ## 0.3.0
 
 ### Breaking changes

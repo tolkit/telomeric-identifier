@@ -107,9 +107,10 @@ pub fn get_clades() -> Result<Vec<String>> {
         out.push(order);
     }
 
-    // remove duplicates and empty strings
-    out.dedup();
-    out.retain(|e| !e.is_empty());
+    // remove duplicates (wherever they are in the file, keeping
+    // the first) and empty strings
+    let mut seen = std::collections::HashSet::new();
+    out.retain(|e| !e.is_empty() && seen.insert(e.clone()));
 
     Ok(out)
 }
@@ -128,7 +129,8 @@ pub fn return_telomere_sequence(clade: String) -> Result<TelomereSeq> {
 
     for result in rdr.deserialize() {
         let record: TelomereRepeatRow = result?;
-        if record.order == clade {
+        // the same repeat on several rows (one per species) is searched once
+        if record.order == clade && !telomere_seq.seq.0.contains(&record.telomeric_repeat) {
             telomere_seq.push(record.telomeric_repeat);
         }
     }
