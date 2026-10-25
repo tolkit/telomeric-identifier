@@ -24,6 +24,19 @@ const MAX_CANDIDATES: usize = 40;
 const MIN_ARRAY_LENGTH: usize = 40;
 /// Arrays need at least this many copies.
 const MIN_COPIES: f64 = 1.9;
+/// Above this period, arrays need [`MIN_COPIES_LONG`] copies: two copies of a
+/// dispersed repeat a few kb apart otherwise pass as a long-period array.
+const LONG_PERIOD: usize = 2000;
+const MIN_COPIES_LONG: f64 = 3.0;
+
+/// The copies an array of period `d` needs.
+fn min_copies(d: usize) -> f64 {
+    if d > LONG_PERIOD {
+        MIN_COPIES_LONG
+    } else {
+        MIN_COPIES
+    }
+}
 /// Previous occurrences followed per position when testing a lag
 /// (low-complexity sequence can have many within one period).
 const MAX_CHAIN: usize = 16;
@@ -254,7 +267,7 @@ fn make_array(seq: &[u8], d: usize, (first, last, n): (usize, usize, usize)) -> 
     let start = first.saturating_sub(d);
     let end = (last + K).min(seq.len());
     let len = end - start;
-    if len < MIN_ARRAY_LENGTH || (len as f64) < MIN_COPIES * d as f64 {
+    if len < MIN_ARRAY_LENGTH || (len as f64) < min_copies(d) * d as f64 {
         return None;
     }
     let region = &seq[start..end];
@@ -384,6 +397,31 @@ mod tests {
         let a = arrays.iter().max_by_key(|a| a.len()).unwrap();
         assert!(a.period.abs_diff(176) <= 3, "period {}", a.period);
         assert!(a.start.abs_diff(3000) < 200 && a.end.abs_diff(3000 + 176 * 20) < 200);
+    }
+
+    #[test]
+    fn test_long_unit_needs_three_copies() {
+        // a 2,150 bp unit in 8 diverged copies is an array at its period
+        let unit = random_seq(2150, 11);
+        let mut seq = random_seq(1000, 12);
+        seq.extend(diverged(&unit, 8, 0.05, 13));
+        seq.extend(random_seq(1000, 14));
+        let arrays = find_arrays(&seq, 10_000);
+        let a = arrays.iter().max_by_key(|a| a.len()).unwrap();
+        assert!(a.period.abs_diff(2150) <= 43, "period {}", a.period);
+        // two copies of a 3 kb dispersed repeat 6 kb apart are not
+        let element = random_seq(3000, 15);
+        let mut seq = random_seq(2000, 16);
+        seq.extend(diverged(&element, 1, 0.02, 17));
+        seq.extend(random_seq(3000, 18));
+        seq.extend(diverged(&element, 1, 0.02, 19));
+        seq.extend(random_seq(2000, 20));
+        let arrays = find_arrays(&seq, 10_000);
+        assert!(
+            arrays.iter().all(|a| a.period < 5000),
+            "{:?}",
+            arrays.iter().map(|a| a.period).collect::<Vec<_>>()
+        );
     }
 
     #[test]
