@@ -639,8 +639,10 @@ fn shared_sequence(windows: &[Window], arrays: &[&[Array]]) -> Vec<Shared> {
         .par_iter()
         .zip(arrays)
         .map(|(w, arrays)| {
+            // short-period arrays are masked; long-unit arrays (periods above
+            // 2 kb, as at fly ends) are also sequence shared between ends
             let mut s = w.seq.clone();
-            for a in arrays.iter() {
+            for a in arrays.iter().filter(|a| a.period <= tandem::LONG_PERIOD) {
                 s[a.start..a.end].fill(b'N');
             }
             let mut rank = Vec::with_capacity(s.len());
@@ -1515,6 +1517,9 @@ mod tests {
         }
         let (_, _, s) = analyse(&w, None, 2200);
         assert_eq!(s["top_family_period_at_max"], true);
+        // the long-unit array is also sequence shared between ends
+        let (_, _, s) = analyse(&w, None, 10_000);
+        assert_eq!(s["ends_shared_fraction"], 1.0);
     }
 
     #[test]

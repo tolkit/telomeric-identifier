@@ -26,7 +26,7 @@ const MIN_ARRAY_LENGTH: usize = 40;
 const MIN_COPIES: f64 = 1.9;
 /// Above this period, arrays need [`MIN_COPIES_LONG`] copies: two copies of a
 /// dispersed repeat a few kb apart otherwise pass as a long-period array.
-const LONG_PERIOD: usize = 2000;
+pub(crate) const LONG_PERIOD: usize = 2000;
 const MIN_COPIES_LONG: f64 = 3.0;
 /// Above [`LONG_PERIOD`], matched positions in one array may be at most this
 /// far apart (below it, up to one period), and must make up at least
