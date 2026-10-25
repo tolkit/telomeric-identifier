@@ -222,9 +222,9 @@ fn main() -> Result<()> {
                         .default_value("0")
                 )
                 .arg(
-                    arg!(--"max-period" [MAX_PERIOD] "Longest tandem repeat period to look for, in bp")
+                    arg!(--"max-period" [MAX_PERIOD] "Longest tandem repeat period to look for, in bp. A top family within 5% of it is flagged (top_family_period_at_max): its unit may be longer")
                         .value_parser(value_parser!(usize))
-                        .default_value("2000")
+                        .default_value("10000")
                 )
                 .arg(
                     arg!(--"min-sequence-length" [MIN_SEQUENCE_LENGTH] "Skip sequences shorter than this, in bp (e.g. unplaced scaffolds)")
