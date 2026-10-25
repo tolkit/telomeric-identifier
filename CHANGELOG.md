@@ -1,18 +1,5 @@
 # Changelog
 
-## Unreleased
-
-### Changed
-
-- `tidk caps --max-period` defaults to 10,000 bp (was 2,000). Fly chromosome ends carry tandem arrays
-  of units just over 2 kb; with the old limit `caps` reported them at a shorter lag below the limit.
-  With the default 20 kb window, 10 kb is about the longest unit with two copies in a window.
-
-### Added
-
-- `tidk caps`: `top_family_period_at_max` in the JSON summary (and a warning) when the top family's
-  period is within 5% of `--max-period`, as its unit may then be longer than the limit.
-
 ## 0.3.1
 
 ### Added

@@ -56,10 +56,6 @@ const CAP_ENRICHMENT: f64 = 2.0;
 /// ends must share, at least [`CAP_ENRICHMENT`]x the interior fraction.
 const SHARED_K: usize = 16;
 const MIN_SHARED: usize = 2000;
-/// A top family whose period is within this fraction of `--max-period` is
-/// flagged: its unit may be longer than the longest period searched, and the
-/// reported period a shorter lag.
-const PERIOD_AT_MAX: f64 = 0.95;
 const SHARED_MIN_PARTNERS: usize = 2;
 const SHARED_END_FRACTION: f64 = 0.5;
 /// Tip copies: shared k-mers collinear from both tips (same orientation read
@@ -359,12 +355,6 @@ pub fn caps(matches: &clap::ArgMatches) -> Result<()> {
     serde_json::to_writer_pretty(&mut f, &json)?;
     writeln!(f)?;
     eprintln!("[+]\tWritten {prefix}.caps.tsv, .caps.families.tsv and .caps.json");
-    if summary["top_family_period_at_max"].as_bool() == Some(true) {
-        eprintln!(
-            "[!]\tThe top family's period ({} bp) is at --max-period ({max_period} bp): its unit may be longer. Rerun with a larger --max-period",
-            summary["top_family_period"]
-        );
-    }
     eprintln!(
         "[+]\tClass: {}. Top family at ends: {} ({} bp period), top at {}/{} ends, {:.0}% of interior windows",
         summary["class"],
@@ -814,7 +804,7 @@ fn analyse(
     for (r, sh) in results.iter_mut().zip(shared) {
         r.shared = sh;
     }
-    let summary = summarise(windows, &results, &builder.families, max_period);
+    let summary = summarise(windows, &results, &builder.families);
     (results, builder, summary)
 }
 
@@ -1087,7 +1077,6 @@ fn summarise(
     windows: &[Window],
     results: &[WindowResult],
     families: &[Family],
-    max_period: usize,
 ) -> serde_json::Value {
     let ends: Vec<usize> = (0..windows.len())
         .filter(|&i| windows[i].kind.is_end())
@@ -1176,7 +1165,6 @@ fn summarise(
                 "top_family": null,
                 "top_family_consensus_short": "",
                 "top_family_period": 0,
-                "top_family_period_at_max": false,
                 "top_family_ends": 0,
                 "top_family_interior_fraction": 0.0,
                 "ends_tandem_cover_median": ends_cover,
@@ -1218,7 +1206,6 @@ fn summarise(
             "class": class,
             "top_family": f,
             "top_family_period": families[f].period,
-            "top_family_period_at_max": families[f].period as f64 >= PERIOD_AT_MAX * max_period as f64,
             "top_family_consensus": consensus,
             "top_family_consensus_short": consensus.chars().take(40).collect::<String>(),
             "top_family_telomeric": families[f].telomeric,
@@ -1498,23 +1485,6 @@ mod tests {
                 copy
             })
             .collect()
-    }
-
-    #[test]
-    fn test_long_unit_and_period_at_max() {
-        // a 2,150 bp unit, as at fly ends: found at its period with the
-        // default --max-period, flagged when the limit is below it
-        let w = windows(6, |c| satellite(5, 2150, 6, c));
-        let (_, _, s) = analyse(&w, None, 10_000);
-        assert_eq!(s["class"], "terminal_satellite");
-        assert!(s["top_family_period"].as_u64().unwrap().abs_diff(2150) <= 43);
-        assert_eq!(s["top_family_period_at_max"], false);
-        let (_, _, s) = analyse(&w, None, 2000);
-        if s["top_family_period"].as_u64().unwrap() > 0 {
-            assert!(s["top_family_period"].as_u64().unwrap() <= 2000);
-        }
-        let (_, _, s) = analyse(&w, None, 2200);
-        assert_eq!(s["top_family_period_at_max"], true);
     }
 
     #[test]
