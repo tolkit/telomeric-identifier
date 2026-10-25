@@ -4,9 +4,16 @@
 
 ### Changed
 
-- `tidk caps --max-period` defaults to 10,000 bp (was 2,000). Fly chromosome ends carry tandem arrays
-  of units just over 2 kb; with the old limit `caps` reported them at a shorter lag below the limit.
-  With the default 20 kb window, 10 kb is about the longest unit with two copies in a window.
+- `tidk caps` finds tandem arrays of long units. `--max-period` defaults to 10,000 bp (was 2,000):
+  fly chromosome ends carry arrays of 2-6 kb units, which the old limit reported at a shorter lag
+  below 2 kb or missed. With the default 20 kb window, 10 kb is about the longest unit with two
+  copies in a window. Above 2 kb, an array needs at least three copies, matched positions at most
+  2 kb apart and making up at least 5% of the array, so that dispersed repeats and chance k-mer
+  matches in repeat-rich sequence are not taken for long arrays. In 402 Diptera assemblies, interior
+  windows keep their tandem cover (median 0.20, against 0.23 at 2 kb).
+- `tidk caps`: arrays of units above 2 kb also count as sequence shared between ends (only
+  shorter arrays are masked before looking for shared sequence), so ends carrying long-unit
+  arrays at fewer than half the ends are still `shared_complex`.
 
 ### Added
 
