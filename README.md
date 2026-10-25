@@ -169,7 +169,7 @@ Options:
 `tidk caps` describes what is at the chromosome ends of an assembly, with or without a canonical telomere: for lineages that lost telomerase (e.g. flies, spiders), and as a check on telomeric ones. Each sequence gets a window at both ends, read from the tip inwards so all ends are comparable, and `--interior` windows (default 3) as a baseline.
 
 - **Telomere calls** at each end, as in `tidk ends`, if the unit is given with `--string` or can be discovered (a discovered unit must have a G run, GG or CC, as telomeric repeats do; AT-rich microsatellites are skipped).
-- **End-enriched tandem repeats.** A built-in tandem repeat finder (periods 1 bp to `--max-period`, default 2kb, tolerant of divergent copies) finds the arrays in every window, and groups them into families across the assembly by shared k-mers, free of rotation and strand. The assembly is classed `telomeric` or `terminal_satellite` when one family is top at ≥ half the ends, covers ≥ 20% of those windows and is ≥ 2× as frequent at ends as in the interior.
+- **End-enriched tandem repeats.** A built-in tandem repeat finder (periods 1 bp to `--max-period`, default 10 kb, tolerant of divergent copies) finds the arrays in every window, and groups them into families across the assembly by shared k-mers, free of rotation and strand. The assembly is classed `telomeric` or `terminal_satellite` when one family is top at ≥ half the ends, covers ≥ 20% of those windows and is ≥ 2× as frequent at ends as in the interior.
 - **Shared non-tandem sequence** between ends (e.g. retrotransposon arrays), with tandem arrays masked; `shared_complex` when ≥ half the ends share ≥ 2kb with ≥ 2 other ends, at ≥ 2× the interior rate and no tandem cap.
 - **End pairing:** whether the two ends of each sequence share their top family, against random pairing. Spider chromosomes almost never do (a centromeric satellite at one end of acrocentric chromosomes, other families at the other end); a telomere or a fly satellite cap is shared by both ends.
 - **Segments copied from the tip** between ends: non-tandem sequence collinear from both tips (≥ 5kb of shared 16-mers at ≥ 50% density, roughly ≥ 97% identity), counted in non-tandem coordinates so tandem arrays of different length in the two copies do not break it. This is the footprint of break-induced replication or ALT-like copying of one end onto another.
@@ -214,7 +214,7 @@ Options:
   -t, --threads [<THREADS>]
           Threads to use (0: all available) [default: 0]
       --max-period [<MAX_PERIOD>]
-          Longest tandem repeat period to look for, in bp [default: 2000]
+          Longest tandem repeat period to look for, in bp. A top family within 5% of it is flagged (top_family_period_at_max): its unit may be longer [default: 10000]
       --min-sequence-length [<MIN_SEQUENCE_LENGTH>]
           Skip sequences shorter than this, in bp (e.g. unplaced scaffolds) [default: 1000000]
   -o, --output <OUTPUT>
