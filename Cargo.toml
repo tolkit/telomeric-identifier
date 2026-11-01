@@ -53,3 +53,7 @@ ci = "github"
 installers = []
 # Target platforms to build apps for (Rust target-triple syntax)
 targets = ["aarch64-apple-darwin", "x86_64-apple-darwin", "x86_64-unknown-linux-gnu", "x86_64-pc-windows-msvc"]
+
+# macos-14 runners were retired on 2 November 2026
+[workspace.metadata.dist.github-custom-runners]
+aarch64-apple-darwin = "macos-15"
