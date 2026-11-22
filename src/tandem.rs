@@ -29,12 +29,19 @@ const MIN_COPIES: f64 = 1.9;
 pub(crate) const LONG_PERIOD: usize = 2000;
 const MIN_COPIES_LONG: f64 = 3.0;
 /// Above [`LONG_PERIOD`], matched positions in one array may be at most this
-/// far apart (below it, up to one period), and must make up at least
-/// [`MIN_DENSITY_LONG`] of the array: otherwise chance k-mer matches a few kb
-/// apart chain into an "array" across a whole window of repeat-rich sequence.
-/// Copies 85% identical share about 20% of their k-mers.
+/// far apart (below it, up to one period).
 const MAX_GAP_LONG: usize = 2000;
-const MIN_DENSITY_LONG: f64 = 0.05;
+/// Above [`DENSITY_PERIOD`], matched positions must make up at least
+/// [`MIN_DENSITY`] of the array after its first copy: otherwise chance k-mer
+/// matches up to a period apart chain into an "array" across a whole window
+/// of repeat-rich sequence. Copies 85% identical share about 20% of their
+/// k-mers. In the end and interior windows of 40 assemblies, 944 of 966
+/// arrays of 500-2,000 bp periods that were no more self-identical at their
+/// period than at other lags were below this density, and 2 of 308 that were.
+/// Below 500 bp the gaps allowed are short, chance arrays are few, and real
+/// short arrays can be this sparse.
+const DENSITY_PERIOD: usize = 500;
+const MIN_DENSITY: f64 = 0.05;
 
 /// The copies an array of period `d` needs.
 fn min_copies(d: usize) -> f64 {
@@ -43,6 +50,19 @@ fn min_copies(d: usize) -> f64 {
     } else {
         MIN_COPIES
     }
+}
+/// The longest period an array can have in a sequence of `window` bp when
+/// lags up to `max_period` are searched: the array must fit its copies in the
+/// window, so above [`LONG_PERIOD`] this is a third of the window (6,666 bp
+/// in 20 kb), whatever `max_period` is.
+pub(crate) fn longest_period(max_period: usize, window: usize) -> usize {
+    let long = (window as f64 / MIN_COPIES_LONG) as usize;
+    let by_window = if long > LONG_PERIOD {
+        long
+    } else {
+        ((window as f64 / MIN_COPIES) as usize).min(LONG_PERIOD)
+    };
+    max_period.min(by_window)
 }
 /// Previous occurrences followed per position when testing a lag
 /// (low-complexity sequence can have many within one period).
@@ -282,7 +302,7 @@ fn make_array(seq: &[u8], d: usize, (first, last, n): (usize, usize, usize)) -> 
         return None;
     }
     // the copies after the first are the matched part
-    if d > LONG_PERIOD && (n as f64) < MIN_DENSITY_LONG * (len - d) as f64 {
+    if d > DENSITY_PERIOD && (n as f64) < MIN_DENSITY * (len - d) as f64 {
         return None;
     }
     let region = &seq[start..end];
@@ -437,6 +457,91 @@ mod tests {
             "{:?}",
             arrays.iter().map(|a| a.period).collect::<Vec<_>>()
         );
+    }
+
+    /// Random sequence with `at` of its bases A or T.
+    fn at_rich(len: usize, at: f64, mut state: u64) -> Vec<u8> {
+        (0..len)
+            .map(|_| {
+                state = state
+                    .wrapping_mul(6364136223846793005)
+                    .wrapping_add(1442695040888963407);
+                let r = (state >> 11) as f64 / (1u64 << 53) as f64;
+                if r < at / 2.0 {
+                    b'A'
+                } else if r < at {
+                    b'T'
+                } else if r < at + (1.0 - at) / 2.0 {
+                    b'C'
+                } else {
+                    b'G'
+                }
+            })
+            .collect()
+    }
+
+    #[test]
+    fn test_no_chance_arrays_of_1_to_2_kb_periods() {
+        // AT-rich sequence has chance 10-mer matches at any lag; up to a
+        // period apart they must not chain into arrays of 0.5-2 kb periods,
+        // whichever lags are searched
+        for seed in 40..46 {
+            let seq = at_rich(20_000, 0.8, seed);
+            for max_period in [2000, 6666, 10_000] {
+                let arrays = find_arrays(&seq, max_period);
+                assert!(
+                    arrays.iter().all(|a| a.period <= DENSITY_PERIOD),
+                    "seed {seed}, max period {max_period}: {:?}",
+                    arrays
+                        .iter()
+                        .map(|a| (a.period, a.len()))
+                        .collect::<Vec<_>>()
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_sparse_array_needs_density() {
+        // a 1,200 bp unit in 6 copies 85% identical is an array (about 20%
+        // of its 10-mers recur a period back)
+        let unit = random_seq(1200, 50);
+        let mut seq = at_rich(4000, 0.8, 51);
+        seq.extend(diverged(&unit, 6, 0.15, 52));
+        seq.extend(at_rich(4000, 0.8, 53));
+        for max_period in [2000, 6666, 10_000] {
+            let arrays = find_arrays(&seq, max_period);
+            let long: Vec<_> = arrays
+                .iter()
+                .filter(|a| a.period > DENSITY_PERIOD)
+                .collect();
+            assert_eq!(long.len(), 1, "max period {max_period}");
+            assert!(long[0].period.abs_diff(1200) <= 24);
+            assert!(long[0].start.abs_diff(4000) < 300 && long[0].end.abs_diff(11_200) < 300);
+        }
+    }
+
+    #[test]
+    fn test_longest_period_is_a_third_of_the_window() {
+        assert_eq!(longest_period(10_000, 20_000), 6666);
+        assert_eq!(longest_period(10_000, 30_000), 10_000);
+        assert_eq!(longest_period(10_000, 100_000), 10_000);
+        assert_eq!(longest_period(2000, 20_000), 2000);
+        // short windows: two copies of a unit up to 2 kb
+        assert_eq!(longest_period(10_000, 5000), 2000);
+        assert_eq!(longest_period(10_000, 1900), 1000);
+        // a 20 kb window of one unit: found up to the limit, not above it
+        for (period, found) in [(6000, true), (6600, true), (7000, false), (9000, false)] {
+            let seq = diverged(&random_seq(period, 31), 20_000 / period + 1, 0.02, 32);
+            let arrays = find_arrays(&seq[..20_000], 10_000);
+            let long = arrays
+                .iter()
+                .any(|a| a.period.abs_diff(period) <= period / 50);
+            assert_eq!(long, found, "period {period}");
+            assert!(arrays
+                .iter()
+                .all(|a| a.period <= longest_period(10_000, 20_000)));
+        }
     }
 
     #[test]

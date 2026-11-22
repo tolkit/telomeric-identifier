@@ -1,16 +1,43 @@
 # Changelog
 
+## 0.3.3
+
+### Fixed
+
+- `tidk caps`: chance arrays of 0.5-2 kb periods. Arrays of periods above 2 kb needed matched
+  positions to make up 5% of the array; shorter ones did not, and in repeat-rich sequence chance
+  k-mer matches up to a period apart chained into arrays across much of a window. The 5% rule now
+  applies above 500 bp. In 40 assemblies, 966 of 1,274 arrays of 500-2,000 bp periods were no more
+  self-identical at their period than at other lags; the rule removes 944 of them and 2 of the 308
+  that were. How many were reported also depended on `--max-period` (lags that could give no array
+  took candidate slots from them), which it now barely does. In 603 assemblies, 587 keep their
+  class, but the median interior tandem cover of 453 fly, spider and other telomerase-loss
+  assemblies falls from 0.20 to 0.01 (ends: 0.81 to 0.74), and interior windows whose top family
+  has a 0.5-2 kb period from 7,484 to 1,534. Tandem cover and families of these periods from 0.3.1
+  and 0.3.2 should be rerun.
+- `tidk caps`: `--max-period` is now the longest period that can be found. An array of a unit above
+  2 kb needs three copies in the window, so no period above a third of `--window` was ever
+  reported: 6,666 bp at the default 20 kb window, not the 10 kb the 0.3.2 notes, the README and
+  the JSON gave (in 603 assemblies the longest was 6,605 bp). `--max-period` now defaults to a
+  third of the window, at most 10,000, and a larger value is lowered to that with a warning; the
+  `max_period` in the JSON is that limit. Units of 7-10 kb need `-w 30000` or more. Lags up to the
+  value given (10 kb by default) are still examined as candidate periods.
+- `tidk caps`: `top_family_period_at_max` (and its warning) is set when the top family's period is
+  within 5% of that limit. It was compared with the 10 kb `--max-period`, so at the default window
+  it could never be set. The warning says whether to raise `--window` or `--max-period`.
+
 ## 0.3.2
 
 ### Changed
 
 - `tidk caps` finds tandem arrays of long units. `--max-period` defaults to 10,000 bp (was 2,000):
   fly chromosome ends carry arrays of 2-6 kb units, which the old limit reported at a shorter lag
-  below 2 kb or missed. With the default 20 kb window, 10 kb is about the longest unit with two
-  copies in a window. Above 2 kb, an array needs at least three copies, matched positions at most
+  below 2 kb or missed. (With the default 20 kb window the longest period found is 6,666 bp, not
+  10 kb: see 0.3.3.) Above 2 kb, an array needs at least three copies, matched positions at most
   2 kb apart and making up at least 5% of the array, so that dispersed repeats and chance k-mer
   matches in repeat-rich sequence are not taken for long arrays. In 402 Diptera assemblies, interior
-  windows keep their tandem cover (median 0.20, against 0.23 at 2 kb).
+  windows keep their tandem cover (median 0.20, against 0.23 at 2 kb). (Most of that
+  cover was chance arrays of 0.5-2 kb periods: see 0.3.3.)
 - `tidk caps`: arrays of units above 2 kb also count as sequence shared between ends (only
   shorter arrays are masked before looking for shared sequence), so ends carrying long-unit
   arrays at fewer than half the ends are still `shared_complex`.

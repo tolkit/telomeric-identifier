@@ -56,9 +56,13 @@ const CAP_ENRICHMENT: f64 = 2.0;
 /// ends must share, at least [`CAP_ENRICHMENT`]x the interior fraction.
 const SHARED_K: usize = 16;
 const MIN_SHARED: usize = 2000;
-/// A top family whose period is within this fraction of `--max-period` is
-/// flagged: its unit may be longer than the longest period searched, and the
-/// reported period a shorter lag.
+/// `--max-period` when not given: a third of the window ([`tandem::longest_period`]),
+/// at most this. Lags are examined up to this in any case.
+const DEFAULT_MAX_PERIOD: usize = 10_000;
+/// A top family whose period is within this fraction of the longest period
+/// searched (`--max-period`, lowered to [`tandem::longest_period`] for the
+/// window) is flagged: its unit may be longer, and the reported period a
+/// shorter lag.
 const PERIOD_AT_MAX: f64 = 0.95;
 const SHARED_MIN_PARTNERS: usize = 2;
 const SHARED_END_FRACTION: f64 = 0.5;
@@ -185,9 +189,20 @@ pub fn caps(matches: &clap::ArgMatches) -> Result<()> {
     let n_interior = *matches
         .get_one::<usize>("interior")
         .expect("defaulted by clap");
-    let max_period = *matches
-        .get_one::<usize>("max-period")
-        .expect("defaulted by clap");
+    // `search_period`: lags examined as candidate periods, as given (or the
+    // default). `max_period`: the longest period that can be found and is
+    // reported, which a window holding three copies limits. Lags between
+    // the two give no arrays but are still examined, as in 0.3.2: an array
+    // of a unit just above the limit can be found at a lag just below it,
+    // and is then flagged.
+    let requested_period = matches.get_one::<usize>("max-period").copied();
+    let search_period = requested_period.unwrap_or(DEFAULT_MAX_PERIOD);
+    let max_period = tandem::longest_period(search_period, window);
+    if let Some(r) = requested_period.filter(|&r| r > max_period) {
+        eprintln!(
+            "[!]\t--max-period {r} is more than a {window} bp window holds in three copies: the longest period that can be found is {max_period} bp. Use a larger --window for longer units"
+        );
+    }
     let min_sequence_length = *matches
         .get_one::<usize>("min-sequence-length")
         .expect("defaulted by clap");
@@ -309,7 +324,7 @@ pub fn caps(matches: &clap::ArgMatches) -> Result<()> {
         windows.len() - n_ends
     );
 
-    let (results, mut builder, summary) = analyse(&windows, unit.as_deref(), max_period);
+    let (results, mut builder, summary) = analyse(&windows, unit.as_deref(), search_period);
 
     let gap_ends = windows
         .iter()
@@ -325,7 +340,7 @@ pub fn caps(matches: &clap::ArgMatches) -> Result<()> {
         serde_json::Value::Null
     } else {
         let ends: Vec<&Window> = windows.iter().filter(|w| w.kind.is_end()).collect();
-        let per_end = end_reads(&reads, &baits, &ends, &mut builder, max_period, &prefix)?;
+        let per_end = end_reads(&reads, &baits, &ends, &mut builder, search_period, &prefix)?;
         let s = summarise_reads(&per_end, &builder.families);
         eprintln!(
             "[+]	Reads: {} ends open, {} mixed, {} closed, {} without reads. Commonest overhang family: {} ({} bp period), top at {} open ends",
@@ -360,10 +375,17 @@ pub fn caps(matches: &clap::ArgMatches) -> Result<()> {
     writeln!(f)?;
     eprintln!("[+]\tWritten {prefix}.caps.tsv, .caps.families.tsv and .caps.json");
     if summary["top_family_period_at_max"].as_bool() == Some(true) {
-        eprintln!(
-            "[!]\tThe top family's period ({} bp) is at --max-period ({max_period} bp): its unit may be longer. Rerun with a larger --max-period",
-            summary["top_family_period"]
-        );
+        if max_period == tandem::longest_period(usize::MAX, window) {
+            eprintln!(
+                "[!]\tThe top family's period ({} bp) is at the longest a {window} bp window can hold in three copies ({max_period} bp): its unit may be longer. Rerun with a larger --window (three times the unit or more)",
+                summary["top_family_period"]
+            );
+        } else {
+            eprintln!(
+                "[!]\tThe top family's period ({} bp) is at --max-period ({max_period} bp): its unit may be longer. Rerun with a larger --max-period",
+                summary["top_family_period"]
+            );
+        }
     }
     eprintln!(
         "[+]\tClass: {}. Top family at ends: {} ({} bp period), top at {}/{} ends, {:.0}% of interior windows",
@@ -1098,6 +1120,9 @@ fn summarise(
         .filter(|&i| !windows[i].kind.is_end())
         .collect();
     let top_of = |i: usize| results[i].top.as_ref().map(|t| t.family);
+    // the longest period the windows can hold, for the at-max flag
+    let window = windows.iter().map(|w| w.seq.len()).max().unwrap_or(0);
+    let longest = tandem::longest_period(max_period, window);
 
     let mut counts: HashMap<usize, usize> = HashMap::new();
     for &i in &ends {
@@ -1220,7 +1245,7 @@ fn summarise(
             "class": class,
             "top_family": f,
             "top_family_period": families[f].period,
-            "top_family_period_at_max": families[f].period as f64 >= PERIOD_AT_MAX * max_period as f64,
+            "top_family_period_at_max": families[f].period as f64 >= PERIOD_AT_MAX * longest as f64,
             "top_family_consensus": consensus,
             "top_family_consensus_short": consensus.chars().take(40).collect::<String>(),
             "top_family_telomeric": families[f].telomeric,
@@ -1520,6 +1545,17 @@ mod tests {
         // the long-unit array is also sequence shared between ends
         let (_, _, s) = analyse(&w, None, 10_000);
         assert_eq!(s["ends_shared_fraction"], 1.0);
+        // a 6,500 bp unit in 20 kb windows: at the longest period the window
+        // holds in three copies (6,666 bp), so flagged though --max-period
+        // is 10 kb; a 5 kb unit is not
+        let w = windows(6, |c| satellite(6, 6500, 4, c)[..20_000].to_vec());
+        let (_, _, s) = analyse(&w, None, 10_000);
+        assert!(s["top_family_period"].as_u64().unwrap().abs_diff(6500) <= 130);
+        assert_eq!(s["top_family_period_at_max"], true);
+        let w = windows(6, |c| satellite(7, 5000, 4, c));
+        let (_, _, s) = analyse(&w, None, 10_000);
+        assert!(s["top_family_period"].as_u64().unwrap().abs_diff(5000) <= 100);
+        assert_eq!(s["top_family_period_at_max"], false);
     }
 
     #[test]
