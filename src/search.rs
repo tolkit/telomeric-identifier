@@ -1,4 +1,4 @@
-use crate::{open_fasta_reader, utils, SubCommand};
+use crate::{open_fasta, utils, SubCommand};
 use anyhow::Result;
 use std::fs::{create_dir_all, File};
 use std::io::LineWriter;
@@ -11,7 +11,7 @@ pub fn search(matches: &clap::ArgMatches, sc: SubCommand) -> Result<()> {
     let input_fasta = matches
         .get_one::<PathBuf>("fasta")
         .expect("errored by clap");
-    let reader = open_fasta_reader(input_fasta)?;
+    let reader = open_fasta(input_fasta)?;
 
     let telomeric_repeat = matches
         .get_one::<String>("string")
@@ -81,7 +81,7 @@ pub fn search(matches: &clap::ArgMatches, sc: SubCommand) -> Result<()> {
 /// Iterate over windows, counting occurrences of specified string
 /// and write to file on the fly.
 fn write_window_counts<T: std::io::Write>(
-    sequence: bio::io::fasta::Record,
+    sequence: crate::fasta::Record,
     file: &mut LineWriter<T>,
     telomeric_repeat: &str,
     window_size: usize,
@@ -156,13 +156,13 @@ mod tests {
 
     use super::write_window_counts;
 
-    // a wrapper for making a bio::io::fasta record
-    fn make_record(id: &str, seq: &[u8]) -> bio::io::fasta::Record {
-        bio::io::fasta::Record::with_attrs(id, None, seq)
+    // a wrapper for making a fasta record
+    fn make_record(id: &str, seq: &[u8]) -> crate::fasta::Record {
+        crate::fasta::Record::with_attrs(id, None, seq)
     }
 
     // take a record, write to a vector (fake file), then read out of this the output.
-    fn calc_windows(rec: bio::io::fasta::Record, repeat: &str, ws: usize) -> String {
+    fn calc_windows(rec: crate::fasta::Record, repeat: &str, ws: usize) -> String {
         let file = Vec::new();
         let mut lw = LineWriter::new(file);
         let id = rec.id().to_owned();

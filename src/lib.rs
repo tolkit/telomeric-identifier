@@ -1,5 +1,4 @@
 use anyhow::Result;
-use bio::io::fasta;
 use chrono::Local;
 use clap::crate_version;
 use flate2::read::MultiGzDecoder;
@@ -22,6 +21,8 @@ pub mod clades;
 pub mod ends;
 /// The entry point for the `tidk explore` subcommand.
 pub mod explore;
+/// A FASTA reader with rust-bio's behaviour, reading on its own thread.
+pub mod fasta;
 /// The entry point for the `tidk find` subcommand.
 pub mod finder;
 /// The entry point for the `tidk length` subcommand.
@@ -36,12 +37,19 @@ pub(crate) mod tandem;
 /// Module for utilities.
 pub mod utils;
 
+/// Open a FASTA file that may be plain or gzipped (by the `.gz` extension),
+/// read and decompressed on its own thread. Records are as
+/// [`open_fasta_reader`] reads them.
+pub fn open_fasta<P: AsRef<Path>>(path: P) -> Result<fasta::Reader> {
+    Ok(fasta::Reader::from_path(path)?)
+}
+
 /// Open a FASTA file that may be plain or gzipped.
 /// Returns a `bio::io::fasta::Reader` whose underlying reader is `Send`,
 /// so you can still use `.records().par_bridge()`.
 pub fn open_fasta_reader<P: AsRef<Path>>(
     path: P,
-) -> Result<fasta::Reader<Box<dyn BufRead + Send>>> {
+) -> Result<bio::io::fasta::Reader<Box<dyn BufRead + Send>>> {
     let path = path.as_ref();
     let file = File::open(path)?;
 
@@ -55,7 +63,7 @@ pub fn open_fasta_reader<P: AsRef<Path>>(
         _ => Box::new(BufReader::new(file)),
     };
 
-    Ok(fasta::Reader::from_bufread(boxed_reader))
+    Ok(bio::io::fasta::Reader::from_bufread(boxed_reader))
 }
 
 /// Three possible subcommands.

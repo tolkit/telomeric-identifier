@@ -1845,6 +1845,7 @@ dependencies = [
  "flate2",
  "itertools",
  "lexical-sort",
+ "memchr",
  "rayon",
  "regex",
  "reqwest",

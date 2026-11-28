@@ -1,4 +1,4 @@
-use crate::{open_fasta_reader, utils, SubCommand};
+use crate::{open_fasta, utils, SubCommand};
 use anyhow::bail;
 use anyhow::Result;
 use rayon::prelude::*;
@@ -139,7 +139,7 @@ fn explore_length(
     threshold: usize,
     error_tolerant: bool,
 ) -> Result<Vec<RepeatPositions>> {
-    let reader = open_fasta_reader(input_fasta)?;
+    let reader = open_fasta(input_fasta)?;
 
     // try parallelising
     let (sender, receiver) = channel();
@@ -175,7 +175,7 @@ fn explore_length(
 }
 
 pub fn split_seq_by_distance(
-    sequence: bio::io::fasta::Record,
+    sequence: crate::fasta::Record,
     dist_from_chromosome_end: f64,
     seq_len: usize,
 ) -> [Vec<u8>; 2] {
@@ -814,7 +814,7 @@ mod tests {
     const DIST_FROM_CHROM_END: f64 = 0.5;
 
     fn split_by_dist(genome: &str) -> [Vec<u8>; 2] {
-        let record = bio::io::fasta::Record::with_attrs("id1", None, genome.as_bytes());
+        let record = crate::fasta::Record::with_attrs("id1", None, genome.as_bytes());
         split_seq_by_distance(record, DIST_FROM_CHROM_END, genome.len())
     }
 

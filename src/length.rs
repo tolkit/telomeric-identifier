@@ -1,5 +1,5 @@
 use crate::ends::{self, Block, EndsConfig, Side, Status, Strand, Telomere, STRAND_BIAS_WARNING};
-use crate::open_fasta_reader;
+use crate::open_fasta;
 use anyhow::Result;
 use clap::crate_version;
 use rayon::prelude::*;
@@ -101,7 +101,7 @@ pub fn length(matches: &clap::ArgMatches) -> Result<()> {
 
     let scanned = AtomicUsize::new(0);
     let (sender, receiver) = channel();
-    open_fasta_reader(input_fasta)?
+    open_fasta(input_fasta)?
         .records()
         .enumerate()
         .par_bridge()

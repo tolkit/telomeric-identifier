@@ -28,7 +28,7 @@
 use crate::anchor::{self, Baits};
 use crate::ends::{self, EndsConfig, Side, Status};
 use crate::tandem::{self, Array, FAMILY_K};
-use crate::{explore, open_fasta_reader, utils};
+use crate::{explore, open_fasta, utils};
 use anyhow::{bail, Context, Result};
 use clap::crate_version;
 use rayon::prelude::*;
@@ -241,7 +241,7 @@ pub fn caps(matches: &clap::ArgMatches) -> Result<()> {
     // in the order of the end windows.
     let mut windows = Vec::new();
     let mut baits: Vec<Vec<u8>> = Vec::new();
-    for result in open_fasta_reader(input_fasta)?.records() {
+    for result in open_fasta(input_fasta)?.records() {
         let record = result?;
         let id = record.id().to_owned();
         let len = record.seq().len();
@@ -441,7 +441,7 @@ fn end_reads(
     let mut kept: Vec<Vec<(String, Vec<u8>)>> = vec![Vec::new(); baits.len()];
     let mut n_reads = 0usize;
     for path in reads {
-        let hits: Vec<(String, anchor::Hit)> = open_fasta_reader(path)?
+        let hits: Vec<(String, anchor::Hit)> = open_fasta(path)?
             .records()
             .par_bridge()
             .filter_map(|r| {

@@ -1,5 +1,5 @@
 use crate::explore::{self, Orientation};
-use crate::{open_fasta_reader, utils};
+use crate::{open_fasta, utils};
 use anyhow::{bail, Result};
 use clap::crate_version;
 use rayon::prelude::*;
@@ -170,7 +170,7 @@ pub fn ends(matches: &clap::ArgMatches) -> Result<()> {
 
     // only keep the ends of each sequence in memory
     let mut records = Vec::new();
-    for result in open_fasta_reader(input_fasta)?.records() {
+    for result in open_fasta(input_fasta)?.records() {
         let record = result?;
         let seq = record.seq();
         if seq.len() < min_sequence_length {
