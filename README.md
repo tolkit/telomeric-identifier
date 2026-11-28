@@ -301,8 +301,12 @@ As an example on the ol' Square Spot Rustic <i>Xestia xanthographa</i>:
 ```bash
 tidk find -c lepidoptera -o Xes fastas/ilXesXant1_1.20201023.curated_primary.fa
 
-tidk plot -t finder/Xes_telomeric_repeat_windows.tsv -o ilXes -h 120 -w 800
+tidk plot -t finder/Xes_telomeric_repeat_windows.tsv -o ilXes --height 120 -w 800
 ```
+
+`-h` is `--help`, so the subplot height needs the long form, `--height`.
+
+To plot `tidk` results onto the chromosomes of an assembly, alongside BUSCO synteny, see [ChromSyn](https://github.com/slimsuite/chromsyn).
 
 ## Cite
 
