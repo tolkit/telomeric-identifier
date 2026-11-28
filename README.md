@@ -48,11 +48,11 @@ The output has a row per canonical repeat unit with the number of copies found i
 Since version 0.3.0, runs of a repeat may contain sequencing errors (substitutions and indels), so raw reads and noisy assemblies still give the true repeat unit. In simulations it is recovered at up to 10% error (see `benchmarks/accuracy`). Use `--exact` for the previous behaviour, where any error breaks a run. `-e`/`--error-tolerant` is still accepted and does nothing.
 
 For example:
-`tidk explore --minimum 5 --maximum 12 fastas/iyBomHort1_1.20210303.curated_primary.fa > out.tsv` searches the genome for repeats from length 5 to length 12 sequentially on the <a href="https://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/905/332/935/GCA_905332935.1_iyBomHort1.1/"><i>Bombus hortorum</i> genome</a>.
+`tidk explore fastas/iyBomHort1_1.20210303.curated_primary.fa > out.tsv` searches the genome for repeats from length 5 to length 12 (the default `--minimum` and `--maximum`) on the <a href="https://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/905/332/935/GCA_905332935.1_iyBomHort1.1/"><i>Bombus hortorum</i> genome</a>.
 
 ```
 Use a range of kmer sizes to find potential telomeric repeats.
-One of either length, or minimum and maximum must be specified.
+Explores lengths --minimum to --maximum (5 to 12 by default), or a single --length.
 
 Usage: tidk explore [OPTIONS] <FASTA>
 
@@ -60,7 +60,7 @@ Arguments:
   <FASTA>  The input fasta file
 
 Options:
-  -l, --length [<LENGTH>]        Length of substring
+  -l, --length [<LENGTH>]        Length of substring, instead of a range from --minimum to --maximum
   -m, --minimum [<MINIMUM>]      Minimum length of substring [default: 5]
   -x, --maximum [<MAXIMUM>]      Maximum length of substring [default: 12]
   -t, --threshold [<THRESHOLD>]  Positions of repeats are only reported if they occur sequentially in a greater number than the threshold [default: 100]

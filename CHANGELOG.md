@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- `tidk explore` without `--length`, `--minimum` or `--maximum` failed with "the following required
+  arguments were not provided", so the declared defaults (5 to 12) could not be used; nor could
+  `--minimum` or `--maximum` alone. They now explore 5 to 12, `--minimum` to 12, or 5 to `--maximum`,
+  with the same output as giving both. `--length` still takes precedence.
+
 ## 0.3.3
 
 ### Fixed

@@ -40,7 +40,8 @@ pub fn explore(matches: &clap::ArgMatches, sc: SubCommand) -> Result<()> {
     let input_fasta = matches
         .get_one::<PathBuf>("fasta")
         .expect("errored by clap");
-    let length = *matches.get_one::<usize>("length").expect("errored by clap");
+    // no --length (or 0): the range from --minimum to --maximum
+    let length = matches.get_one::<usize>("length").copied().unwrap_or(0);
 
     // if length is not set, these are the lengths (and length itself is set to zero)
     let minimum = *matches

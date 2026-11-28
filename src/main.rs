@@ -68,7 +68,7 @@ fn main() -> Result<()> {
         )
         .subcommand(
             Command::new("explore")
-                .about("Use a range of kmer sizes to find potential telomeric repeats.\nOne of either length, or minimum and maximum must be specified.")
+                .about("Use a range of kmer sizes to find potential telomeric repeats.\nExplores lengths --minimum to --maximum (5 to 12 by default), or a single --length.")
                 .arg(
                     Arg::new("fasta")
                         .value_name("FASTA")
@@ -77,20 +77,17 @@ fn main() -> Result<()> {
                         .help("The input fasta file")
                 )
                 .arg(
-                    arg!(-l --length [LENGTH] "Length of substring")
-                        .required_unless_present_all(["minimum", "maximum"])
+                    arg!(-l --length [LENGTH] "Length of substring, instead of a range from --minimum to --maximum")
                         .default_value_if("minimum", ArgPredicate::IsPresent, Some("0"))
                         .value_parser(value_parser!(usize))
                 )
                 .arg(
                     arg!(-m --minimum [MINIMUM] "Minimum length of substring")
-                        .required_unless_present("length")
                         .value_parser(value_parser!(usize))
                         .default_value("5")
                 )
                 .arg(
                     arg!(-x --maximum [MAXIMUM] "Maximum length of substring")
-                        .required_unless_present("length")
                         .value_parser(value_parser!(usize))
                         .default_value("12")
                 )
