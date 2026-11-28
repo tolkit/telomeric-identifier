@@ -50,17 +50,19 @@ pub(crate) fn window_counts(
     use std::borrow::Cow;
     // as `chunks` would, before any work
     let _ = seq.chunks(window_size);
-    let upper: Cow<[u8]> = if seq.iter().any(u8::is_ascii_lowercase) {
-        Cow::Owned(seq.to_ascii_uppercase())
-    } else {
-        Cow::Borrowed(seq)
-    };
     let forward = memchr::memmem::Finder::new(forward);
     let reverse = memchr::memmem::Finder::new(reverse);
-    upper
-        .par_chunks(window_size)
+    seq.par_chunks(window_size)
         .with_min_len(16)
-        .map(|w| (forward.find_iter(w).count(), reverse.find_iter(w).count()))
+        .map(|w| {
+            // uppercase a window at a time, so soft-masked sequence isn't copied whole
+            let w: Cow<[u8]> = if w.iter().any(u8::is_ascii_lowercase) {
+                Cow::Owned(w.to_ascii_uppercase())
+            } else {
+                Cow::Borrowed(w)
+            };
+            (forward.find_iter(&w).count(), reverse.find_iter(&w).count())
+        })
         .collect()
 }
 

@@ -42,8 +42,8 @@ const GZ_READ: usize = 8 * 1024;
 const IN_FLIGHT: usize = 4;
 /// For bgzip files: compressed bytes inflated at a time, and chunks in
 /// flight (about two batches, so the next is inflated while one is parsed).
-const BGZF_BATCH: usize = 8 << 20;
-const BGZF_IN_FLIGHT: usize = 64;
+const BGZF_BATCH: usize = 2 << 20;
+const BGZF_IN_FLIGHT: usize = 16;
 /// Most threads inflating bgzip blocks.
 const BGZF_THREADS: usize = 8;
 
