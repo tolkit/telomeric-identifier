@@ -1,13 +1,54 @@
 # Changelog
 
-## Unreleased
+## 0.4.0
+
+Output is the same as 0.3.3 for the same input and arguments (stdout, stderr, exit status and every
+output file, including errors on malformed FASTA and corrupt gzip), except as listed under Fixed and
+Changed. Checked on 245 test cases, randomised tests of each subcommand, and 548 runs on 52 Darwin
+Tree of Life assemblies of 26 taxonomic groups (with reads for 10, and INSDC bgzip copies for 10).
+
+### Performance
+
+Wall time against 0.3.3 on a 381 Mb bgzip assembly: `explore` 20x faster, `find` 14x, `search` 7x,
+`caps` 2.4-3.9x, `ends` 2.5x. On a 920 Mb plain-gzip assembly: `explore` 11x, `caps` 1.7-3x,
+`ends` 1.4x (plain gzip is inflated on one thread). Across 52 assemblies the median was 10.6x for
+`explore`, 5x for `find`, 4x for `search` and 1.7-2.5x for `caps`.
+
+- FASTA is read by tidk's own reader (rust-bio's record and error behaviour) on a separate thread;
+  bgzip (BGZF) input is inflated in parallel.
+- `tidk explore` reads the input once for all kmer lengths, rather than once per length.
+- `tidk search` and `tidk find` count windows in parallel with SIMD substring search.
+- Repeat runs (`explore`, `ends`, `length`, `caps`) are found without allocating per candidate run.
+- `tidk caps`: faster tandem array finding and shared-sequence search; arrays are found while the
+  input is still being read; reads are anchored in parallel batches.
+
+### Added
+
+- A `zlib-rs` cargo feature: inflates plain gzip about 25% faster. Output from valid input is the
+  same, but corrupt gzip can fail at a different point, with a different error, so it is off by default.
+
+### Changed
+
+- `tidk caps --reads` took read hits in thread order, so which 50 overhang reads per end were kept,
+  and the order of `.caps.overhang.fa`, could change between runs. Reads are now taken in input
+  order, which is what 0.3.3 gave with `-t 1`.
+- In error-tolerant runs, a tie between two bases more common than the seed's at a position of the
+  run's consensus was broken by hash map order, so results could change from run to run; the lower
+  base now wins. Rare, but not only in `explore`: a run whose consensus changes can be kept or left
+  out of a telomere. In the tests, 8 of 654,813 copies in `explore` on one set of HiFi reads, and
+  one `ends` telomere in 52 assemblies, which 0.3.3 called 2,926 bp in 9 of 12 runs and 3,675 bp in 3
+  (now always 3,675 bp).
 
 ### Fixed
 
 - `tidk explore` without `--length`, `--minimum` or `--maximum` failed with "the following required
   arguments were not provided", so the declared defaults (5 to 12) could not be used; nor could
   `--minimum` or `--maximum` alone. They now explore 5 to 12, `--minimum` to 12, or 5 to `--maximum`,
-  with the same output as giving both. `--length` still takes precedence.
+  with the same output as giving both. `--length` still takes precedence. `-l` without a value
+  panicked; it now explores 5 to 12 as well.
+- `tidk explore` on a pipe or process substitution (e.g. `<(zcat genome.fa.gz)`) with a range of
+  lengths read the input once per length, so lengths after the first found nothing. The input is
+  now read once for all lengths.
 
 ## 0.3.3
 

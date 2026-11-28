@@ -1,6 +1,6 @@
 [package]
 name = "tidk"
-version = "0.3.3"
+version = "0.4.0"
 authors = ["Max Brown <mb39@sanger.ac.uk>"]
 edition = "2021"
 license = "MIT"
@@ -58,7 +58,7 @@ inherits = "release"
 # Config for 'dist'
 [workspace.metadata.dist]
 # The preferred dist version to use in CI (Cargo.toml SemVer syntax)
-cargo-dist-version = "0.30.2"
+cargo-dist-version = "0.34.0"
 # CI backends to support
 ci = "github"
 # The installers to generate for each app
