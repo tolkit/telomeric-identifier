@@ -33,6 +33,37 @@ pub fn find_motifs(motif: &str, string: &str) -> Motifs {
     }
 }
 
+/// Occurrences of `forward` and `reverse` in each `window_size` bp window of
+/// `seq`, counted as [`find_motifs`] then [`remove_overlapping_indexes`]
+/// count them: the leftmost occurrence, then the next starting after it, and
+/// so on. Windows are counted in parallel.
+///
+/// `seq` must be ASCII and the motifs non-empty; windows are uppercased
+/// before counting. Panics, as `chunks` does, if `window_size` is 0.
+pub(crate) fn window_counts(
+    seq: &[u8],
+    window_size: usize,
+    forward: &[u8],
+    reverse: &[u8],
+) -> Vec<(usize, usize)> {
+    use rayon::prelude::*;
+    use std::borrow::Cow;
+    // as `chunks` would, before any work
+    let _ = seq.chunks(window_size);
+    let upper: Cow<[u8]> = if seq.iter().any(u8::is_ascii_lowercase) {
+        Cow::Owned(seq.to_ascii_uppercase())
+    } else {
+        Cow::Borrowed(seq)
+    };
+    let forward = memchr::memmem::Finder::new(forward);
+    let reverse = memchr::memmem::Finder::new(reverse);
+    upper
+        .par_chunks(window_size)
+        .with_min_len(16)
+        .map(|w| (forward.find_iter(w).count(), reverse.find_iter(w).count()))
+        .collect()
+}
+
 /// Calculate the reverse complement of a telomeric repeat.
 pub fn reverse_complement(dna: &str) -> String {
     let dna_chars = dna.chars();

@@ -1,7 +1,7 @@
 use crate::{clades, open_fasta, utils, SubCommand};
 use anyhow::{bail, Context, Result};
 use std::fs::{create_dir_all, File};
-use std::io::LineWriter;
+use std::io::BufWriter;
 use std::io::Write;
 use std::path::PathBuf;
 use std::process;
@@ -78,7 +78,7 @@ pub fn finder(matches: &clap::ArgMatches, sc: SubCommand) -> Result<()> {
         "_telomeric_repeat_windows.tsv"
     );
     let finder_file = File::create(file_name)?;
-    let mut finder_file = LineWriter::new(finder_file);
+    let mut finder_file = BufWriter::new(finder_file);
     // add headers
     writeln!(
         finder_file,
@@ -118,7 +118,7 @@ pub fn finder(matches: &clap::ArgMatches, sc: SubCommand) -> Result<()> {
 /// fasta file, writing on the fly.
 fn write_window_counts<T: std::io::Write>(
     sequence: crate::fasta::Record,
-    file: &mut LineWriter<T>,
+    file: &mut T,
     clade_info: clades::TelomereSeq,
     telomeric_repeat: &[String],
     window_size: usize,
@@ -142,6 +142,28 @@ fn write_window_counts<T: std::io::Write>(
                 ))?;
         let reverse_telomeric_seq = utils::reverse_complement(forward_telomeric_seq);
         let current_telomeric_length = forward_telomeric_seq.len();
+
+        // ASCII sequence: count windows in parallel (as below, same counts)
+        let seq = sequence.seq();
+        if !forward_telomeric_seq.is_empty() && seq.is_ascii() {
+            let counts = utils::window_counts(
+                seq,
+                window_size,
+                forward_telomeric_seq.as_bytes(),
+                reverse_telomeric_seq.as_bytes(),
+            );
+            for (i, (forward_repeat_number, reverse_repeat_number)) in
+                counts.into_iter().enumerate()
+            {
+                let end = ((i + 1) * window_size).min(seq.len());
+                writeln!(
+                    file,
+                    "{id}\t{end}\t{forward_repeat_number}\t{reverse_repeat_number}\t{forward_telomeric_seq}"
+                )?;
+            }
+            telomeric_repeat_index += 1;
+            continue;
+        }
 
         // create the iterator in each loop iteration isnt costly is it?
         let windows = sequence.seq().chunks(window_size);

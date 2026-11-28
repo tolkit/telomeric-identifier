@@ -1,7 +1,7 @@
 use crate::{open_fasta, utils, SubCommand};
 use anyhow::Result;
 use std::fs::{create_dir_all, File};
-use std::io::LineWriter;
+use std::io::BufWriter;
 use std::io::Write;
 use std::path::PathBuf;
 use std::str;
@@ -43,7 +43,7 @@ pub fn search(matches: &clap::ArgMatches, sc: SubCommand) -> Result<()> {
         extension
     );
     let search_file = File::create(file_name)?;
-    let mut search_file = LineWriter::new(search_file);
+    let mut search_file = BufWriter::new(search_file);
 
     // add headers if extension/file type is a csv
     if extension == "tsv" {
@@ -78,11 +78,64 @@ pub fn search(matches: &clap::ArgMatches, sc: SubCommand) -> Result<()> {
     Ok(())
 }
 
-/// Iterate over windows, counting occurrences of specified string
-/// and write to file on the fly.
+/// Count occurrences of the string in each window, and write a line per window.
 fn write_window_counts<T: std::io::Write>(
     sequence: crate::fasta::Record,
-    file: &mut LineWriter<T>,
+    file: &mut T,
+    telomeric_repeat: &str,
+    window_size: usize,
+    id: String,
+    extension: &str,
+) -> Result<()> {
+    let forward_telomeric_seq = telomeric_repeat.to_uppercase();
+    let reverse_telomeric_seq = utils::reverse_complement(&forward_telomeric_seq).to_uppercase();
+    let seq = sequence.seq();
+    // non-ASCII sequence and empty strings are counted as before
+    if forward_telomeric_seq.is_empty() || !seq.is_ascii() {
+        return write_window_counts_bytewise(
+            sequence,
+            file,
+            telomeric_repeat,
+            window_size,
+            id,
+            extension,
+        );
+    }
+    let counts = utils::window_counts(
+        seq,
+        window_size,
+        forward_telomeric_seq.as_bytes(),
+        reverse_telomeric_seq.as_bytes(),
+    );
+    for (i, (forward_repeat_number, reverse_repeat_number)) in counts.into_iter().enumerate() {
+        let start = i * window_size;
+        let end = (start + window_size).min(seq.len());
+        if extension == "tsv" {
+            writeln!(
+                file,
+                "{id}\t{end}\t{forward_repeat_number}\t{reverse_repeat_number}\t{forward_telomeric_seq}"
+            )?;
+        } else {
+            // for bedgraph only four columns, and sum the forward & reverse for convenience
+            writeln!(
+                file,
+                "{}\t{}\t{}\t{}",
+                id,
+                start,
+                end,
+                forward_repeat_number + reverse_repeat_number,
+            )?;
+        }
+    }
+    Ok(())
+}
+
+/// Iterate over windows, counting occurrences of specified string
+/// and write to file on the fly. Used for sequence that is not ASCII, where
+/// a window can split a character (an error), and for an empty string.
+fn write_window_counts_bytewise<T: std::io::Write>(
+    sequence: crate::fasta::Record,
+    file: &mut T,
     telomeric_repeat: &str,
     window_size: usize,
     id: String,
