@@ -34,14 +34,18 @@ cmake = "=0.1.45"
 reqwest = {version = "0.12.7", features = ["blocking", "json"]}
 dirs = "5.0.1"
 base64 = "0.22.1"
-flate2 = "1.1.5"
+# zlib-rs: a faster inflate than the default miniz_oxide, same output
+flate2 = { version = "1.1.5", default-features = false, features = ["zlib-rs"] }
 # sequence name filters in caps
 regex = "1.10.6"
+
+[profile.release]
+lto = "fat"
+codegen-units = 1
 
 # The profile that 'cargo dist' will build with
 [profile.dist]
 inherits = "release"
-lto = "thin"
 
 # Config for 'dist'
 [workspace.metadata.dist]
