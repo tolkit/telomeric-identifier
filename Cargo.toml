@@ -34,8 +34,9 @@ cmake = "=0.1.45"
 reqwest = {version = "0.12.7", features = ["blocking", "json"]}
 dirs = "5.0.1"
 base64 = "0.22.1"
-# zlib-rs: a faster inflate than the default miniz_oxide, same output
-flate2 = { version = "1.1.5", default-features = false, features = ["zlib-rs"] }
+# inflate with miniz_oxide (flate2's default), as tidk always has: other
+# backends decode corrupt gzip differently (where it fails, and the error)
+flate2 = "1.1.5"
 # sequence name filters in caps
 regex = "1.10.6"
 # line splitting in the FASTA reader, motif search
@@ -44,6 +45,11 @@ memchr = "2.7"
 [profile.release]
 lto = "fat"
 codegen-units = 1
+
+[features]
+# Inflate plain gzip about 25% faster with zlib-rs. Output from valid input is
+# the same; corrupt gzip can fail at a different point, with a different error.
+zlib-rs = ["flate2/zlib-rs"]
 
 # The profile that 'cargo dist' will build with
 [profile.dist]

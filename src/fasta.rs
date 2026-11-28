@@ -19,13 +19,17 @@
 //!   I/O error while reading a line takes precedence over it;
 //! - gzipped input (by the `.gz` extension) is read with `MultiGzDecoder` in
 //!   reads of 8 KiB, as a `BufReader` did, so a corrupt stream fails at the
-//!   same point.
+//!   same point. bgzip (BGZF) files are inflated block by block in parallel
+//!   instead, each block checked against its CRC and size; at anything else
+//!   (another kind of member, corruption, a truncated file) reading goes
+//!   back to `MultiGzDecoder` from the start, skipping what was already
+//!   sent, so it fails as before.
 
 use flate2::read::MultiGzDecoder;
 use std::fs::File;
-use std::io::{self, BufRead, Read};
+use std::io::{self, BufRead, Read, Seek, SeekFrom};
 use std::path::Path;
-use std::sync::mpsc::{sync_channel, Receiver};
+use std::sync::mpsc::{sync_channel, Receiver, SyncSender};
 use std::thread;
 
 /// Bytes sent from the reading thread at a time.
@@ -36,6 +40,12 @@ const CHUNK: usize = 1 << 20;
 const GZ_READ: usize = 8 * 1024;
 /// Chunks in flight between the reading thread and the parser.
 const IN_FLIGHT: usize = 4;
+/// For bgzip files: compressed bytes inflated at a time, and chunks in
+/// flight (about two batches, so the next is inflated while one is parsed).
+const BGZF_BATCH: usize = 8 << 20;
+const BGZF_IN_FLIGHT: usize = 64;
+/// Most threads inflating bgzip blocks.
+const BGZF_THREADS: usize = 8;
 
 /// One FASTA record.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -89,15 +99,177 @@ fn ascii_whitespace(b: u8) -> bool {
     matches!(b, b'\t' | b'\n' | 0x0b | 0x0c | b'\r' | b' ')
 }
 
+/// Is this the start of a BGZF block (a gzip member with only the BC extra
+/// field)? Returns the block length.
+fn bgzf_block_len(h: &[u8]) -> Option<usize> {
+    (h.len() >= 18
+        && h[..4] == [0x1f, 0x8b, 8, 4]
+        && h[10..16] == [6, 0, b'B', b'C', 2, 0])
+        .then(|| u16::from_le_bytes([h[16], h[17]]) as usize + 1)
+}
+
+/// Inflate one BGZF block, if it is whole and its CRC and size match.
+fn inflate_block(block: &[u8]) -> Option<Vec<u8>> {
+    let n = block.len();
+    if n < 26 {
+        return None;
+    }
+    let cdata = &block[18..n - 8];
+    let crc = u32::from_le_bytes(block[n - 8..n - 4].try_into().unwrap());
+    let size = u32::from_le_bytes(block[n - 4..].try_into().unwrap()) as usize;
+    if size > 1 << 16 {
+        return None;
+    }
+    let mut out = Vec::with_capacity(size + 1);
+    let mut d = flate2::Decompress::new(false);
+    match d.decompress_vec(cdata, &mut out, flate2::FlushDecompress::Finish) {
+        Ok(flate2::Status::StreamEnd) if d.total_in() as usize == cdata.len() && out.len() == size => {}
+        _ => return None,
+    }
+    let mut c = flate2::Crc::new();
+    c.update(&out);
+    (c.sum() == crc).then_some(out)
+}
+
+/// How reading a bgzip file in parallel ended.
+enum Bgzf {
+    /// All of it was sent.
+    Done,
+    /// Something else came up after this many bytes were sent.
+    Fallback(usize),
+    /// The parser has gone.
+    Disconnected,
+}
+
+/// Send the inflated contents of a bgzip file in chunks, inflating blocks
+/// in parallel, as long as every block is whole and checks out.
+fn read_bgzf(file: &mut File, tx: &SyncSender<io::Result<Vec<u8>>>) -> Bgzf {
+    let threads = thread::available_parallelism().map_or(1, |n| n.get()).min(BGZF_THREADS);
+    let mut buf: Vec<u8> = Vec::new();
+    let mut eof = false;
+    let mut sent = 0;
+    let mut chunk: Vec<u8> = Vec::with_capacity(CHUNK);
+    let mut first = true;
+    loop {
+        while !eof && buf.len() < BGZF_BATCH {
+            let start = buf.len();
+            buf.resize(start + BGZF_BATCH, 0);
+            match file.read(&mut buf[start..]) {
+                Ok(0) => {
+                    buf.truncate(start);
+                    eof = true;
+                }
+                Ok(n) => buf.truncate(start + n),
+                Err(e) if e.kind() == io::ErrorKind::Interrupted => buf.truncate(start),
+                Err(_) => return Bgzf::Fallback(sent),
+            }
+        }
+        // whole blocks in the buffer
+        let mut blocks = Vec::new();
+        let mut pos = 0;
+        while pos < buf.len() {
+            match bgzf_block_len(&buf[pos..]) {
+                Some(len) if pos + len <= buf.len() => {
+                    blocks.push(pos..pos + len);
+                    pos += len;
+                }
+                // a block continuing past the buffer: read more
+                Some(_) if !eof => break,
+                None if !eof && buf.len() - pos < 18 => break,
+                _ => {
+                    // not a whole BGZF block: leave it to MultiGzDecoder
+                    pos = usize::MAX;
+                    break;
+                }
+            }
+        }
+        if first && blocks.is_empty() {
+            // an empty file, or not bgzip after all
+            return Bgzf::Fallback(0);
+        }
+        first = false;
+        let stop = pos == usize::MAX;
+        // inflate, a contiguous share of blocks per thread
+        let per = blocks.len().div_ceil(threads).max(1);
+        let inflated: Vec<Option<Vec<u8>>> = thread::scope(|s| {
+            let handles: Vec<_> = blocks
+                .chunks(per)
+                .map(|group| {
+                    let buf = &buf;
+                    s.spawn(move || {
+                        group
+                            .iter()
+                            .map(|r| inflate_block(&buf[r.clone()]))
+                            .collect::<Vec<_>>()
+                    })
+                })
+                .collect();
+            handles
+                .into_iter()
+                .flat_map(|h| h.join().unwrap())
+                .collect()
+        });
+        for out in inflated {
+            let Some(out) = out else {
+                if !chunk.is_empty() && tx.send(Ok(std::mem::take(&mut chunk))).is_err() {
+                    return Bgzf::Disconnected;
+                }
+                return Bgzf::Fallback(sent);
+            };
+            sent += out.len();
+            chunk.extend_from_slice(&out);
+            if chunk.len() >= CHUNK {
+                let full = std::mem::replace(&mut chunk, Vec::with_capacity(CHUNK));
+                if tx.send(Ok(full)).is_err() {
+                    return Bgzf::Disconnected;
+                }
+            }
+        }
+        if !chunk.is_empty() && tx.send(Ok(std::mem::take(&mut chunk))).is_err() {
+            return Bgzf::Disconnected;
+        }
+        if stop {
+            return Bgzf::Fallback(sent);
+        }
+        buf.drain(..pos);
+        if eof && buf.is_empty() {
+            return Bgzf::Done;
+        }
+    }
+}
+
 /// Read a file (gzipped if it ends in `.gz`) on a thread, sending its bytes
 /// in chunks, then the error that stopped it, if any.
 fn spawn_reader(path: &Path) -> io::Result<Receiver<io::Result<Vec<u8>>>> {
-    let file = File::open(path)?;
+    let mut file = File::open(path)?;
     let gz = path.extension().and_then(|e| e.to_str()) == Some("gz");
-    let (tx, rx) = sync_channel(IN_FLIGHT);
+    // a bgzip file? Only regular files are looked at (and rewound); any
+    // read error here is met again when reading.
+    let regular = file.metadata().is_ok_and(|m| m.is_file());
+    let mut bgzf = false;
+    if gz && regular {
+        let mut header = [0u8; 18];
+        bgzf = file.read_exact(&mut header).is_ok() && bgzf_block_len(&header).is_some();
+        file.seek(SeekFrom::Start(0))?;
+    }
+    let (tx, rx) = sync_channel(if bgzf { BGZF_IN_FLIGHT } else { IN_FLIGHT });
     thread::Builder::new()
         .name("fasta-reader".into())
         .spawn(move || {
+            // bytes already sent from the bgzip blocks, not to send again
+            let mut skip = 0;
+            if bgzf {
+                match read_bgzf(&mut file, &tx) {
+                    Bgzf::Done | Bgzf::Disconnected => return,
+                    Bgzf::Fallback(sent) => {
+                        if let Err(e) = file.seek(SeekFrom::Start(0)) {
+                            let _ = tx.send(Err(e));
+                            return;
+                        }
+                        skip = sent;
+                    }
+                }
+            }
             let (mut source, step): (Box<dyn Read>, usize) = if gz {
                 (Box::new(MultiGzDecoder::new(file)), GZ_READ)
             } else {
@@ -122,8 +294,16 @@ fn spawn_reader(path: &Path) -> io::Result<Receiver<io::Result<Vec<u8>>>> {
                     }
                 }
                 chunk.truncate(filled);
-                if filled > 0 && tx.send(Ok(chunk)).is_err() {
-                    return;
+                if skip >= filled {
+                    skip -= filled;
+                } else {
+                    if skip > 0 {
+                        chunk.drain(..skip);
+                        skip = 0;
+                    }
+                    if tx.send(Ok(chunk)).is_err() {
+                        return;
+                    }
                 }
                 match stop {
                     // end of input: dropping the sender tells the parser
