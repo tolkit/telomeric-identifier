@@ -38,6 +38,7 @@ use std::fs::{create_dir_all, File};
 use std::hash::BuildHasherDefault;
 use std::io::{LineWriter, Write};
 use std::path::PathBuf;
+use std::sync::Mutex;
 
 /// Arrays are in the same family if their k-mer sets have at least this
 /// Jaccard similarity.
@@ -243,46 +244,68 @@ pub fn caps(matches: &clap::ArgMatches) -> Result<()> {
     // in the order of the end windows.
     let mut windows = Vec::new();
     let mut baits: Vec<Vec<u8>> = Vec::new();
-    for result in open_fasta(input_fasta)?.records() {
-        let record = result?;
-        let id = record.id().to_owned();
-        let len = record.seq().len();
-        if len < min_sequence_length
-            || len < 2 * window
-            || include.as_ref().is_some_and(|r| !r.is_match(&id))
-            || exclude.as_ref().is_some_and(|r| r.is_match(&id))
-        {
-            continue;
-        }
-        let seq = record.seq().to_ascii_uppercase();
-        let mut push = |kind, position, s: Vec<u8>| {
-            windows.push(Window {
-                id: id.clone(),
-                sequence_length: len,
-                kind,
-                position,
-                seq: s,
-                telomere: None,
-            })
-        };
-        push(Kind::Start, 0, seq[..window].to_vec());
-        push(Kind::End, len - window, seq[len - window..].to_vec());
-        if !reads.is_empty() {
-            let b = bait.min(len / 2);
-            baits.push(seq[..b].to_vec());
-            baits.push(anchor::revcomp(&seq[len - b..]));
-        }
-        if len >= (n_interior + 2) * window {
-            for i in 1..=n_interior {
-                let mid = len * i / (n_interior + 1);
-                push(
-                    Kind::Interior,
-                    mid - window / 2,
-                    seq[mid - window / 2..mid + window / 2].to_vec(),
-                );
+    // The tandem arrays of each window (end windows read from the tip
+    // inwards, as they are analysed) are found while the rest of the input
+    // is read: (window, arrays).
+    let early: Mutex<Vec<(usize, Vec<Array>)>> = Mutex::new(Vec::new());
+    rayon::scope(|scope| -> Result<()> {
+        for result in open_fasta(input_fasta)?.records() {
+            let record = result?;
+            let id = record.id().to_owned();
+            let len = record.seq().len();
+            if len < min_sequence_length
+                || len < 2 * window
+                || include.as_ref().is_some_and(|r| !r.is_match(&id))
+                || exclude.as_ref().is_some_and(|r| r.is_match(&id))
+            {
+                continue;
+            }
+            // windows and baits of the uppercase sequence
+            let seq = record.seq();
+            let upper = |from: usize, to: usize| seq[from..to].to_ascii_uppercase();
+            let mut push = |kind, position, s: Vec<u8>| {
+                let oriented = if kind == Kind::End {
+                    revcomp(&s)
+                } else {
+                    s.clone()
+                };
+                let (n, early) = (windows.len(), &early);
+                scope.spawn(move |_| {
+                    let arrays = tandem::find_arrays(&oriented, search_period);
+                    early.lock().unwrap().push((n, arrays));
+                });
+                windows.push(Window {
+                    id: id.clone(),
+                    sequence_length: len,
+                    kind,
+                    position,
+                    seq: s,
+                    telomere: None,
+                })
+            };
+            push(Kind::Start, 0, upper(0, window));
+            push(Kind::End, len - window, upper(len - window, len));
+            if !reads.is_empty() {
+                let b = bait.min(len / 2);
+                baits.push(upper(0, b));
+                baits.push(anchor::revcomp(&seq[len - b..]));
+            }
+            if len >= (n_interior + 2) * window {
+                for i in 1..=n_interior {
+                    let mid = len * i / (n_interior + 1);
+                    push(
+                        Kind::Interior,
+                        mid - window / 2,
+                        upper(mid - window / 2, mid + window / 2),
+                    );
+                }
             }
         }
-    }
+        Ok(())
+    })?;
+    let mut early = early.into_inner().unwrap();
+    early.sort_unstable_by_key(|e| e.0);
+    let arrays: Vec<Vec<Array>> = early.into_iter().map(|e| e.1).collect();
     let n_ends = windows.iter().filter(|w| w.kind.is_end()).count();
     if n_ends == 0 {
         bail!(
@@ -326,7 +349,8 @@ pub fn caps(matches: &clap::ArgMatches) -> Result<()> {
         windows.len() - n_ends
     );
 
-    let (results, mut builder, summary) = analyse(&windows, unit.as_deref(), search_period);
+    let (results, mut builder, summary) =
+        analyse_arrays(&windows, arrays, unit.as_deref(), search_period);
 
     let gap_ends = windows
         .iter()
@@ -875,6 +899,7 @@ fn tip_copy(hits: &[TipHit]) -> Option<usize> {
 
 /// Tandem arrays, families and the end-enrichment summary for a set of
 /// windows (end windows read from the tip inwards).
+#[cfg(test)]
 fn analyse(
     windows: &[Window],
     unit: Option<&str>,
@@ -884,6 +909,16 @@ fn analyse(
         .par_iter()
         .map(|w| tandem::find_arrays(&w.seq, max_period))
         .collect();
+    analyse_arrays(windows, arrays, unit, max_period)
+}
+
+/// As `analyse`, with each window's tandem arrays already found.
+fn analyse_arrays(
+    windows: &[Window],
+    arrays: Vec<Vec<Array>>,
+    unit: Option<&str>,
+    max_period: usize,
+) -> (Vec<WindowResult>, FamilyBuilder, serde_json::Value) {
     let mut builder = FamilyBuilder::new(unit);
     let seqs: Vec<&[u8]> = windows.iter().map(|w| w.seq.as_slice()).collect();
     let assignment = builder.assign_all(&arrays, &seqs);
