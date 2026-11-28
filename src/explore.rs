@@ -196,8 +196,7 @@ fn explore_lengths(
                     let positions = if error_tolerant {
                         tolerant_positions(sequence, length, log(i), id, threshold)
                     } else {
-                        let indexes = chunk_fasta(sequence, length, log(i), id.to_string());
-                        calculate_indexes(indexes, length, log(i), id.to_string(), threshold)
+                        exact_positions(sequence, length, log(i), id, threshold)
                     };
                     positions.map(|mut r| {
                         r.shift(offsets[a]);
@@ -330,14 +329,12 @@ impl RepeatPositions {
     }
 
     fn filter_by_frequency(&mut self, frequency: usize) -> Self {
-        let inner: &Vec<RepeatPosition> = &self
-            .0
-            .clone() // can we remove this?
-            .into_iter()
-            .filter(|e| e.get_count() > frequency && !e.is_simple_repeat())
-            .collect();
-
-        Self(inner.to_vec())
+        Self(
+            std::mem::take(&mut self.0)
+                .into_iter()
+                .filter(|e| e.get_count() > frequency && !e.is_simple_repeat())
+                .collect(),
+        )
     }
     // move all positions along by `offset`
     fn shift(&mut self, offset: usize) {
@@ -420,8 +417,8 @@ fn tolerant_positions(
     id: &str,
     frequency: usize,
 ) -> Option<RepeatPositions> {
-    let collection = tolerant_runs(sequence, chunk_length, id);
-    if collection.is_empty() {
+    let (any, kept) = filtered_runs(sequence, chunk_length, id, true, frequency);
+    if !any {
         if let Some(log) = log {
             log(format!(
                 "[-]\t\tChromosome {id}: No consecutive repeats of length {chunk_length} were identified."
@@ -429,8 +426,82 @@ fn tolerant_positions(
         }
         None
     } else {
-        Some(RepeatPositions(collection).filter_by_frequency(frequency))
+        Some(RepeatPositions(kept))
     }
+}
+
+/// [`chunk_fasta`] followed by [`calculate_indexes`], with the same messages.
+fn exact_positions(
+    sequence: &[u8],
+    chunk_length: usize,
+    log: Log,
+    id: &str,
+    frequency: usize,
+) -> Option<RepeatPositions> {
+    if chunk_length == 0 || !sequence.is_ascii() {
+        let indexes = chunk_fasta(sequence, chunk_length, log, id.to_string());
+        return calculate_indexes(indexes, chunk_length, log, id.to_string(), frequency);
+    }
+    let sequence_len = sequence.len();
+    if sequence_len <= chunk_length {
+        if let Some(log) = log {
+            log(format!(
+                "[-]\tChunk length ({chunk_length}) greater than filtered sequence length ({sequence_len}) for {id}
+[-]\tConsider increasing proportion of chromosome length covered. Skipping."
+            ));
+        }
+    }
+    let (any, kept) = filtered_runs(sequence, chunk_length, id, false, frequency);
+    if !any {
+        if let Some(log) = log {
+            log(format!(
+                "[-]\t\tChromosome {id}: No consecutive repeats of length {chunk_length} were identified."
+            ));
+        }
+        None
+    } else {
+        Some(RepeatPositions(kept))
+    }
+}
+
+/// Whether there are any runs at all, and the runs passing
+/// [`RepeatPositions::filter_by_frequency`], allocating only for those.
+fn filtered_runs(
+    sequence: &[u8],
+    chunk_length: usize,
+    id: &str,
+    error_tolerant: bool,
+    frequency: usize,
+) -> (bool, Vec<RepeatPosition>) {
+    let k = chunk_length;
+    if !error_tolerant && (k == 0 || !sequence.is_ascii()) {
+        // the reference, whose exact runs are already without simple repeats
+        let runs = find_runs_reference(sequence, k, id, false);
+        let any = !runs.is_empty();
+        return (any, RepeatPositions(runs).filter_by_frequency(frequency).0);
+    }
+    let mut any = false;
+    let mut kept = Vec::new();
+    // as RepeatPosition::get_count and is_simple_repeat
+    let mut take = |start: usize, end: usize, unit: &[u8]| {
+        any = true;
+        if (end - start) / unit.len() > frequency && smallest_period(unit) >= REPEAT_PERIOD_THRESHOLD
+        {
+            kept.push(RepeatPosition {
+                id: id.to_string(),
+                start,
+                end,
+                sequence: String::from_utf8_lossy(unit).into_owned(),
+            });
+        }
+    };
+    if error_tolerant {
+        scan_runs(sequence, k, true, &mut take);
+    } else {
+        // every run, simple repeats too, for whether there are any
+        exact_scan(sequence, k, |start, end, unit| take(start * k, end * k, unit));
+    }
+    (any, kept)
 }
 
 /// Find runs of a repeat which may contain sequencing errors.
@@ -441,7 +512,23 @@ fn tolerant_positions(
 /// [`ROTATION_SWITCH_PENALTY`]). Extension stops once the score drops more
 /// than a fixed amount below its best, and the run is trimmed back to the
 /// chunk where the score was highest.
+#[cfg(test)]
 fn tolerant_runs(sequence: &[u8], chunk_length: usize, id: &str) -> Vec<RepeatPosition> {
+    let mut runs = Vec::new();
+    scan_runs(sequence, chunk_length, true, |start, end, unit| {
+        runs.push(RepeatPosition {
+            id: id.to_string(),
+            start,
+            end,
+            sequence: String::from_utf8_lossy(unit).into_owned(),
+        })
+    });
+    runs
+}
+
+/// [`tolerant_runs`] as first written: the reference for the fast scanner,
+/// and used for non-ASCII sequence.
+fn tolerant_runs_reference(sequence: &[u8], chunk_length: usize, id: &str) -> Vec<RepeatPosition> {
     let sequence = sequence.to_ascii_uppercase();
     let chunks: Vec<&[u8]> = sequence.chunks_exact(chunk_length).collect();
     // enough to survive one indel: a chunk spanning it, then the rotation switch
@@ -575,19 +662,294 @@ fn best_rotation(chunk: &[u8], rotations: &[Vec<u8>], current: usize) -> (usize,
 
 /// All runs of repeats of one kmer length in a sequence, without filtering
 /// on run length or repeat type. Positions are relative to the sequence.
+#[cfg(test)]
 pub(crate) fn find_runs(
     sequence: &[u8],
     chunk_length: usize,
     id: &str,
     error_tolerant: bool,
 ) -> Vec<RepeatPosition> {
+    let mut runs = Vec::new();
+    scan_runs(sequence, chunk_length, error_tolerant, |start, end, unit| {
+        runs.push(RepeatPosition {
+            id: id.to_string(),
+            start,
+            end,
+            sequence: String::from_utf8_lossy(unit).into_owned(),
+        })
+    });
+    runs
+}
+
+/// [`find_runs`] as first written, the reference for [`scan_runs`].
+fn find_runs_reference(
+    sequence: &[u8],
+    chunk_length: usize,
+    id: &str,
+    error_tolerant: bool,
+) -> Vec<RepeatPosition> {
     if error_tolerant {
-        tolerant_runs(sequence, chunk_length, id)
+        tolerant_runs_reference(sequence, chunk_length, id)
     } else {
         let indexes = chunk_fasta(sequence, chunk_length, None, id.to_string());
         calculate_indexes(indexes, chunk_length, None, id.to_string(), 0)
             .map(|r| r.0)
             .unwrap_or_default()
+    }
+}
+
+/// The runs [`find_runs`] finds, in order, passed to `emit` as (start, end,
+/// unit as the run reads) without allocating for each. ASCII sequence is
+/// scanned by [`tolerant_scan`] or [`exact_scan`]; other sequence (and a
+/// kmer length of 0, which panics as before) by the reference code.
+pub(crate) fn scan_runs(
+    sequence: &[u8],
+    chunk_length: usize,
+    error_tolerant: bool,
+    mut emit: impl FnMut(usize, usize, &[u8]),
+) {
+    if chunk_length == 0 || !sequence.is_ascii() {
+        for r in find_runs_reference(sequence, chunk_length, "", error_tolerant) {
+            emit(r.start, r.end, r.sequence.as_bytes());
+        }
+        return;
+    }
+    let k = chunk_length;
+    if error_tolerant {
+        let upper = ascii_uppercase(sequence);
+        tolerant_scan(&upper, k, |start, end, unit| emit(start * k, end * k, unit));
+    } else {
+        // calculate_indexes drops simple repeats, even at frequency 0
+        exact_scan(sequence, k, |start, end, unit| {
+            if smallest_period(unit) >= REPEAT_PERIOD_THRESHOLD {
+                emit(start * k, end * k, unit)
+            }
+        });
+    }
+}
+
+/// An uppercase view of ASCII sequence, copied only if it has lowercase.
+fn ascii_uppercase(sequence: &[u8]) -> std::borrow::Cow<'_, [u8]> {
+    if sequence.iter().any(u8::is_ascii_lowercase) {
+        std::borrow::Cow::Owned(sequence.to_ascii_uppercase())
+    } else {
+        std::borrow::Cow::Borrowed(sequence)
+    }
+}
+
+/// The smallest period of a string, as [`check_repeats`] finds it for ASCII:
+/// the smallest d with s[i] == s[i - d] for all i >= d (s.len() if none).
+fn smallest_period(s: &[u8]) -> usize {
+    if s.is_empty() || !s.is_ascii() {
+        return check_repeats(&String::from_utf8_lossy(s));
+    }
+    (1..s.len())
+        .find(|&d| s[d..] == s[..s.len() - d])
+        .unwrap_or(s.len())
+}
+
+/// The exact runs of [`chunk_fasta`] and [`calculate_indexes`] in ASCII
+/// sequence, in chunks: two or more identical consecutive chunks of `k` bp
+/// (compared as in the sequence, case and all), with consecutive runs
+/// merged when they are the same once uppercased. `emit` gets (first chunk,
+/// chunk after the last, uppercase unit).
+fn exact_scan(seq: &[u8], k: usize, mut emit: impl FnMut(usize, usize, &[u8])) {
+    let n = seq.len() / k;
+    let chunk = |i: usize| &seq[i * k..(i + 1) * k];
+    let same = |i: usize| {
+        let (a, b) = (chunk(i), chunk(i + 1));
+        a[0] == b[0] && a == b
+    };
+    let mut current: Option<(usize, usize)> = None;
+    let mut unit: Vec<u8> = Vec::with_capacity(k);
+    let mut next: Vec<u8> = Vec::with_capacity(k);
+    let mut i = 0;
+    while i + 1 < n {
+        if !same(i) {
+            i += 1;
+            continue;
+        }
+        let mut j = i + 1;
+        while j + 1 < n && same(j) {
+            j += 1;
+        }
+        // a run of identical chunks i..=j
+        next.clear();
+        next.extend(chunk(i).iter().map(u8::to_ascii_uppercase));
+        current = match current {
+            Some((start, end)) if end == i && next == unit => Some((start, j + 1)),
+            other => {
+                if let Some((start, end)) = other {
+                    emit(start, end, &unit);
+                }
+                std::mem::swap(&mut unit, &mut next);
+                Some((i, j + 1))
+            }
+        };
+        i = j + 1;
+    }
+    if let Some((start, end)) = current {
+        emit(start, end, &unit);
+    }
+}
+
+/// k-mers of up to this length are compared as packed integers.
+const PACKED_MAX: usize = 16;
+
+/// Up to 16 bytes as an integer, the rest zero.
+fn pack(bytes: &[u8]) -> u128 {
+    let mut b = [0u8; 16];
+    b[..bytes.len()].copy_from_slice(bytes);
+    u128::from_le_bytes(b)
+}
+
+/// Bytes that differ between two packed k-mers.
+fn packed_mismatches(a: u128, b: u128) -> i64 {
+    const LOW: u128 = u128::from_le_bytes([0x7f; 16]);
+    const HIGH: u128 = u128::from_le_bytes([0x80; 16]);
+    let x = a ^ b;
+    ((((x & LOW) + LOW) | x) & HIGH).count_ones() as i64
+}
+
+/// [`tolerant_runs_reference`] on uppercase ASCII sequence, in chunks,
+/// without allocating per seed. `emit` gets (first chunk, chunk after the
+/// last, consensus unit).
+fn tolerant_scan(seq: &[u8], k: usize, mut emit: impl FnMut(usize, usize, &[u8])) {
+    let n = seq.len() / k;
+    let chunk = |i: usize| &seq[i * k..(i + 1) * k];
+    let packed = k <= PACKED_MAX;
+    // packed chunks, for the comparisons with rotations of the seed
+    let pchunk = |i: usize| -> u128 {
+        if i * k + 16 <= seq.len() {
+            let mask = if k == 16 { u128::MAX } else { (1u128 << (8 * k)) - 1 };
+            u128::from_le_bytes(seq[i * k..i * k + 16].try_into().unwrap()) & mask
+        } else {
+            pack(chunk(i))
+        }
+    };
+    let x_drop = 2 * k as i64 + ROTATION_SWITCH_PENALTY;
+    // rotation r of the seed at [r * k, (r + 1) * k)
+    let mut rotations = vec![0u8; k * k];
+    let mut packed_rotations = vec![0u128; k];
+    let (mut forward, mut backward) = (Vec::new(), Vec::new());
+    let mut unit = vec![0u8; k];
+
+    // as `best_rotation`: stay on the current rotation unless another,
+    // paying the switch penalty, scores higher; the first such on ties
+    let best_rotation = |j: usize, rotations: &[u8], packed_rotations: &[u128], current: usize| {
+        let score = |r: usize| -> i64 {
+            let mismatches = if packed {
+                packed_mismatches(pchunk(j), packed_rotations[r])
+            } else {
+                chunk(j)
+                    .iter()
+                    .zip(&rotations[r * k..(r + 1) * k])
+                    .filter(|(a, b)| a != b)
+                    .count() as i64
+            };
+            k as i64 - (1 + MISMATCH_PENALTY) * mismatches
+        };
+        let mut best = (current, score(current));
+        for r in 0..k {
+            if r == current {
+                continue;
+            }
+            let s = score(r) - ROTATION_SWITCH_PENALTY;
+            if s > best.1 {
+                best = (r, s);
+            }
+        }
+        best
+    };
+    // as `extend`: the rotations matched up to the best score, and the last
+    // chunk of the run in this direction
+    let extend = |indices: &mut dyn Iterator<Item = usize>,
+                  matched: &mut Vec<usize>,
+                  rotations: &[u8],
+                  packed_rotations: &[u128]|
+     -> Option<usize> {
+        matched.clear();
+        let (mut rotation, mut score, mut best, mut best_len) = (0, 0i64, 0i64, 0usize);
+        let mut last = None;
+        for j in indices {
+            let (r, chunk_score) = best_rotation(j, rotations, packed_rotations, rotation);
+            rotation = r;
+            matched.push(r);
+            score += chunk_score;
+            if score > best {
+                best = score;
+                best_len = matched.len();
+                last = Some(j);
+            }
+            if best - score > x_drop {
+                break;
+            }
+        }
+        matched.truncate(best_len);
+        last
+    };
+
+    let mut previous_end = 0;
+    let mut i = 0;
+    while i + 1 < n {
+        let (a, b) = (chunk(i), chunk(i + 1));
+        if a[0] != b[0] || a != b {
+            i += 1;
+            continue;
+        }
+        for r in 0..k {
+            let rot = &mut rotations[r * k..(r + 1) * k];
+            rot[..k - r].copy_from_slice(&a[r..]);
+            rot[k - r..].copy_from_slice(&a[..r]);
+            if packed {
+                packed_rotations[r] = pack(rot);
+            }
+        }
+        let end = extend(&mut (i + 2..n), &mut forward, &rotations, &packed_rotations);
+        let start = extend(
+            &mut (previous_end..i).rev(),
+            &mut backward,
+            &rotations,
+            &packed_rotations,
+        );
+        let start = start.unwrap_or(i);
+        let end = end.map_or(i + 2, |e| e + 1);
+
+        // as `consensus`: per position of the seed, the commonest base over
+        // the run's chunks (undoing each chunk's rotation), unless it is no
+        // commoner than the seed's base
+        let rotation_of = |c: usize| -> usize {
+            if c < i {
+                backward[i - 1 - c]
+            } else if c < i + 2 {
+                0
+            } else {
+                forward[c - i - 2]
+            }
+        };
+        let mut counts = [0u32; 128];
+        for (p, u) in unit.iter_mut().enumerate() {
+            for c in start..end {
+                let r = rotation_of(c);
+                counts[chunk(c)[(p + k - r) % k] as usize] += 1;
+            }
+            let seed_base = a[p];
+            let seed_count = counts[seed_base as usize];
+            // the commonest base, lowest byte on ties (rust-bio's HashMap
+            // order made ties above the seed's count random)
+            let (base, count) = counts
+                .iter()
+                .enumerate()
+                .fold((0usize, 0u32), |best, (b, &n)| if n > best.1 { (b, n) } else { best });
+            *u = if count > seed_count { base as u8 } else { seed_base };
+            for c in start..end {
+                let r = rotation_of(c);
+                counts[chunk(c)[(p + k - r) % k] as usize] = 0;
+            }
+        }
+        emit(start, end, &unit);
+        previous_end = end;
+        i = end;
     }
 }
 
@@ -618,8 +980,8 @@ pub(crate) fn top_units(
     let mut positions = RepeatPositions::new();
     for (name, sequence) in sequences {
         for length in minimum..=maximum {
-            let runs = find_runs(sequence, length, name, error_tolerant);
-            positions.add(&mut RepeatPositions(runs).filter_by_frequency(threshold).0);
+            // find_runs, then filter_by_frequency
+            positions.add(&mut filtered_runs(sequence, length, name, error_tolerant, threshold).1);
         }
     }
     let estimates = get_telomeric_repeat_estimates(&mut positions)?;
@@ -1192,5 +1554,115 @@ mod tests {
                 .unwrap()
         };
         assert!(length(&forward).abs_diff(length(&reverse)) <= 12);
+    }
+
+    /// Sequences to compare the fast run scanners with the reference: random
+    /// sequence with noisy tandem arrays of several units, mixed case, Ns.
+    fn scanner_cases() -> Vec<Vec<u8>> {
+        let mut state = 7u64;
+        let mut next = move |n: u64| {
+            state = state
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            (state >> 33) % n
+        };
+        let units = [
+            "TTAGG", "AACCCT", "TTTAGGG", "A", "AT", "AAT", "ACGTTGCAAGTC", "TTAGGTTAGGTTAGGT",
+            "ACGTACGTAAGGTTCCAGT", "CCTAA",
+        ];
+        let mut cases = Vec::new();
+        for c in 0..120 {
+            let mut seq: Vec<u8> = Vec::new();
+            for _ in 0..(1 + next(6)) {
+                // random stretch
+                for _ in 0..next(300) {
+                    seq.push(b"ACGT"[next(4) as usize]);
+                }
+                // an array with substitutions, indels, case changes and Ns
+                let unit = units[next(units.len() as u64) as usize].as_bytes();
+                let copies = 2 + next(60);
+                let rate = [0, 2, 5, 10, 20][next(5) as usize];
+                let lower = next(4) == 0;
+                for _ in 0..copies {
+                    for &b in unit {
+                        match next(100) {
+                            r if r < rate / 3 => seq.push(b"ACGT"[next(4) as usize]),
+                            r if r < 2 * rate / 3 => {}
+                            r if r < rate => {
+                                seq.push(b);
+                                seq.push(b"ACGTN"[next(5) as usize]);
+                            }
+                            _ => seq.push(if lower { b.to_ascii_lowercase() } else { b }),
+                        }
+                    }
+                    if next(10) == 0 {
+                        // switch case within an array
+                        seq.extend(unit.iter().map(|b| b.to_ascii_lowercase()));
+                    }
+                }
+            }
+            if c % 7 == 0 {
+                seq.extend_from_slice(b"NNNNNNNNNN");
+            }
+            cases.push(seq);
+        }
+        cases
+    }
+
+    fn runs_key(runs: &[RepeatPosition]) -> Vec<(usize, usize, String)> {
+        runs.iter()
+            .map(|r| (r.start, r.end, r.sequence.clone()))
+            .collect()
+    }
+
+    #[test]
+    fn test_scan_runs_matches_reference() {
+        for (c, seq) in scanner_cases().iter().enumerate() {
+            for k in 1..=20 {
+                for tolerant in [true, false] {
+                    let fast = find_runs(seq, k, "x", tolerant);
+                    let reference = find_runs_reference(seq, k, "x", tolerant);
+                    assert_eq!(
+                        runs_key(&fast),
+                        runs_key(&reference),
+                        "case {c}, k {k}, tolerant {tolerant}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_filtered_runs_match_reference() {
+        for (c, seq) in scanner_cases().iter().enumerate() {
+            for k in [2, 3, 5, 6, 7, 12, 17] {
+                for frequency in [0, 1, 3, 10] {
+                    // tolerant: tolerant_runs, then the filter
+                    let reference = tolerant_runs_reference(seq, k, "x");
+                    let any = !reference.is_empty();
+                    let filtered = RepeatPositions(reference).filter_by_frequency(frequency);
+                    let (fast_any, fast) = filtered_runs(seq, k, "x", true, frequency);
+                    assert_eq!(fast_any, any, "case {c}, k {k}");
+                    assert_eq!(runs_key(&fast), runs_key(&filtered.0), "case {c}, k {k}");
+                    // exact: chunk_fasta and calculate_indexes
+                    let indexes = chunk_fasta(seq, k, None, "x".into());
+                    let reference = calculate_indexes(indexes, k, None, "x".into(), frequency);
+                    let (fast_any, fast) = filtered_runs(seq, k, "x", false, frequency);
+                    assert_eq!(fast_any, reference.is_some(), "case {c}, k {k}");
+                    assert_eq!(
+                        runs_key(&fast),
+                        runs_key(&reference.map(|r| r.0).unwrap_or_default()),
+                        "case {c}, k {k}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_smallest_period_matches_check_repeats() {
+        for s in ["A", "AA", "AB", "ABA", "ABAB", "AACCT", "AAAAAAAA", "ATATATAT", "AATAATAAT", "ABCABCAB"] {
+            assert_eq!(smallest_period(s.as_bytes()), check_repeats(s), "{s}");
+        }
     }
 }

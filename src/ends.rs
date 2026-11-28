@@ -301,15 +301,50 @@ pub(crate) type Block = (usize, usize, Strand);
 /// strand is the one covering most of it.
 pub(crate) fn telomere_blocks(window: &[u8], config: &EndsConfig) -> Vec<Block> {
     let unit_strand = unit_strand(&config.unit);
-    let mut runs: Vec<(usize, usize, Strand)> =
-        explore::find_runs(window, config.unit.len(), "", config.error_tolerant)
-            .into_iter()
-            .filter(|r| utils::primitive_telomere_unit(&r.sequence) == config.unit)
-            .map(|r| {
-                let orientation = explore::orientation(&r.sequence, &config.unit);
-                (r.start, r.end, run_strand(orientation, unit_strand))
-            })
-            .collect();
+    let unit = config.unit.as_bytes();
+    // A run's unit has the unit's length, so for a unit of A, C, G and T it
+    // reduces to the unit (utils::primitive_telomere_unit) exactly when it
+    // is a rotation of the unit or of its reverse complement, and reads as
+    // the unit (explore::orientation) when it is a rotation of the unit.
+    let acgt = !unit.is_empty() && unit.iter().all(|b| b"ACGT".contains(b));
+    let rotations = |u: &[u8]| -> Vec<Vec<u8>> {
+        (0..u.len()).map(|r| [&u[r..], &u[..r]].concat()).collect()
+    };
+    let revcomp = utils::reverse_complement(&config.unit);
+    let (of_unit, of_revcomp) = if acgt {
+        (rotations(unit), rotations(revcomp.as_bytes()))
+    } else {
+        (Vec::new(), Vec::new())
+    };
+    let either = acgt && utils::string_rotation(&config.unit, &revcomp);
+    let mut runs: Vec<(usize, usize, Strand)> = Vec::new();
+    explore::scan_runs(
+        window,
+        unit.len(),
+        config.error_tolerant,
+        |start, end, sequence| {
+            let orientation = if acgt {
+                let is_unit = of_unit.iter().any(|r| r.as_slice() == sequence);
+                if !is_unit && !of_revcomp.iter().any(|r| r.as_slice() == sequence) {
+                    return;
+                }
+                if either {
+                    explore::Orientation::Either
+                } else if is_unit {
+                    explore::Orientation::Unit
+                } else {
+                    explore::Orientation::Revcomp
+                }
+            } else {
+                let sequence = String::from_utf8_lossy(sequence);
+                if utils::primitive_telomere_unit(&sequence) != config.unit {
+                    return;
+                }
+                explore::orientation(&sequence, &config.unit)
+            };
+            runs.push((start, end, run_strand(orientation, unit_strand)));
+        },
+    );
     runs.sort_unstable_by_key(|r| r.0);
 
     let strands = [Strand::GRich, Strand::CRich, Strand::Unknown];
