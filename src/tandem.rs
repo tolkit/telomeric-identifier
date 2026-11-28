@@ -10,7 +10,12 @@
 //! Exact k-mer matches tolerate divergent copies: with k = 10, copies 85%
 //! identical still share about 20% of k-mers.
 
+use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
+use std::hash::BuildHasherDefault;
+
+/// A set of k-mer codes, with a fast hash (nothing depends on its order).
+pub(crate) type CodeSet = HashSet<u32, BuildHasherDefault<crate::anchor::KmerHasher>>;
 
 /// k-mer length for finding lags.
 const K: usize = 10;
@@ -89,9 +94,9 @@ pub(crate) struct Array {
     /// averages out divergence between copies, so arrays of one family share
     /// most of these wherever they are; but indels blur an ungapped
     /// consensus of long units, hence also `repeated`.
-    pub(crate) kmers: HashSet<u32>,
+    pub(crate) kmers: CodeSet,
     /// [`FAMILY_K`]-mers seen at least twice in the array, as read.
-    pub(crate) repeated: HashSet<u32>,
+    pub(crate) repeated: CodeSet,
 }
 
 impl Array {
@@ -155,6 +160,12 @@ fn tolerance(period: usize) -> usize {
     period / 50
 }
 
+thread_local! {
+    /// For each [`K`]-mer code, its last position in the sequence being
+    /// scanned (`u32::MAX`: none yet); left empty after each scan.
+    static LAST: RefCell<Vec<u32>> = const { RefCell::new(Vec::new()) };
+}
+
 /// Tandem arrays in a sequence, non-overlapping, sorted by start.
 pub(crate) fn find_arrays(seq: &[u8], max_period: usize) -> Vec<Array> {
     let codes = kmer_codes(seq, K);
@@ -164,33 +175,63 @@ pub(crate) fn find_arrays(seq: &[u8], max_period: usize) -> Vec<Array> {
 
     // previous occurrence of each position's k-mer, and a histogram of the
     // lags to the nearest one
-    let mut last: HashMap<u32, usize> = HashMap::new();
     let mut prev = vec![usize::MAX; codes.len()];
     let mut hist = vec![0u32; max_period + 1];
-    for (i, c) in codes.iter().enumerate() {
-        if let Some(c) = c {
-            if let Some(j) = last.insert(*c, i) {
-                prev[i] = j;
-                let d = i - j;
-                if d <= max_period {
-                    hist[d] += 1;
+    let mut record = |i: usize, j: usize| {
+        prev[i] = j;
+        let d = i - j;
+        if d <= max_period {
+            hist[d] += 1;
+        }
+    };
+    if codes.len() < u32::MAX as usize {
+        LAST.with(|last| {
+            let mut last = last.borrow_mut();
+            if last.is_empty() {
+                last.resize(1 << (2 * K), u32::MAX);
+            }
+            for (i, c) in codes.iter().enumerate() {
+                if let Some(c) = c {
+                    let slot = &mut last[*c as usize];
+                    if *slot != u32::MAX {
+                        record(i, *slot as usize);
+                    }
+                    *slot = i as u32;
+                }
+            }
+            for c in codes.iter().flatten() {
+                last[*c as usize] = u32::MAX;
+            }
+        });
+    } else {
+        let mut last: HashMap<u32, usize> = HashMap::new();
+        for (i, c) in codes.iter().enumerate() {
+            if let Some(c) = c {
+                if let Some(j) = last.insert(*c, i) {
+                    record(i, j);
                 }
             }
         }
     }
 
     // candidate periods: best supported lags, with their indel tolerance
+    let mut cumulative = vec![0u32; max_period + 1];
+    for d in 1..=max_period {
+        cumulative[d] = cumulative[d - 1] + hist[d];
+    }
     let support = |d: usize| -> u32 {
         let t = tolerance(d);
-        hist[d.saturating_sub(t).max(1)..=(d + t).min(max_period)]
-            .iter()
-            .sum()
+        let (lo, hi) = (d.saturating_sub(t).max(1), (d + t).min(max_period));
+        cumulative[hi] - cumulative[lo - 1]
     };
-    let mut lags: Vec<usize> = (1..=max_period).filter(|&d| hist[d] > 0).collect();
-    lags.sort_unstable_by_key(|&d| (std::cmp::Reverse(support(d)), d));
+    let mut lags: Vec<(usize, u32)> = (1..=max_period)
+        .filter(|&d| hist[d] > 0)
+        .map(|d| (d, support(d)))
+        .collect();
+    lags.sort_unstable_by_key(|&(d, s)| (std::cmp::Reverse(s), d));
     let mut candidates: Vec<usize> = Vec::new();
-    for d in lags {
-        if candidates.len() >= MAX_CANDIDATES || support(d) < MIN_LAG_SUPPORT {
+    for (d, s) in lags {
+        if candidates.len() >= MAX_CANDIDATES || s < MIN_LAG_SUPPORT {
             break;
         }
         if candidates
@@ -323,7 +364,13 @@ fn make_array(seq: &[u8], d: usize, (first, last, n): (usize, usize, usize)) -> 
 /// d-mer, which indels don't disturb (e.g. plant telomeres mixing TTTAGGG
 /// and TTTTAGGG); otherwise the column-wise majority of the copies, ungapped.
 fn consensus(region: &[u8], d: usize) -> Vec<u8> {
-    if d <= WORD_CONSENSUS_MAX_PERIOD {
+    // uppercase words fit 2 bits a base; lowercase ones are counted apart,
+    // so are left to the slices below
+    if d <= WORD_CONSENSUS_MAX_PERIOD && !region.iter().any(|b| b"acgt".contains(b)) {
+        if let Some(w) = commonest_word(region, d) {
+            return w;
+        }
+    } else if d <= WORD_CONSENSUS_MAX_PERIOD {
         let mut counts: HashMap<&[u8], usize> = HashMap::new();
         for w in region.windows(d) {
             if w.iter().all(|&b| base_code(b).is_some()) {
@@ -355,20 +402,61 @@ fn consensus(region: &[u8], d: usize) -> Vec<u8> {
         .collect()
 }
 
+/// The commonest d-mer of A, C, G and T in a region (d <= 64), the
+/// lexicographically first on ties, as `consensus` counts words.
+fn commonest_word(region: &[u8], d: usize) -> Option<Vec<u8>> {
+    let mask = if d >= 64 {
+        u128::MAX
+    } else {
+        (1u128 << (2 * d)) - 1
+    };
+    let mut words: Vec<u128> = Vec::with_capacity(region.len());
+    let (mut code, mut valid) = (0u128, 0usize);
+    for &b in region {
+        match base_code(b) {
+            Some(c) => {
+                code = ((code << 2) | c as u128) & mask;
+                valid += 1;
+            }
+            None => valid = 0,
+        }
+        if valid >= d {
+            words.push(code);
+        }
+    }
+    words.sort_unstable();
+    let (mut best, mut best_count) = (None, 0usize);
+    for run in words.chunk_by(|a, b| a == b) {
+        if run.len() > best_count {
+            best = Some(run[0]);
+            best_count = run.len();
+        }
+    }
+    best.map(|w| {
+        (0..d)
+            .map(|j| b"ACGT"[((w >> (2 * (d - 1 - j))) & 3) as usize])
+            .collect()
+    })
+}
+
 /// [`FAMILY_K`]-mers occurring at least twice in a region.
-fn repeated_kmers(region: &[u8]) -> HashSet<u32> {
-    let mut seen = HashSet::new();
-    let mut repeated = HashSet::new();
+fn repeated_kmers(region: &[u8]) -> CodeSet {
+    const _: () = assert!(2 * FAMILY_K <= 32);
+    let mut seen = vec![0u64; (1usize << (2 * FAMILY_K)).div_ceil(64)];
+    let mut repeated = CodeSet::default();
     for c in kmer_codes(region, FAMILY_K).into_iter().flatten() {
-        if !seen.insert(c) {
+        let (word, bit) = ((c >> 6) as usize, c & 63);
+        if seen[word] >> bit & 1 == 1 {
             repeated.insert(c);
+        } else {
+            seen[word] |= 1 << bit;
         }
     }
     repeated
 }
 
 /// [`FAMILY_K`]-mers of a unit repeated in tandem, e.g. a telomeric unit.
-pub(crate) fn unit_kmers(unit: &str) -> HashSet<u32> {
+pub(crate) fn unit_kmers(unit: &str) -> CodeSet {
     let copies = FAMILY_K.div_ceil(unit.len().max(1)) + 2;
     kmer_codes(unit.repeat(copies).as_bytes(), FAMILY_K)
         .into_iter()

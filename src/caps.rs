@@ -27,7 +27,7 @@
 
 use crate::anchor::{self, Baits};
 use crate::ends::{self, EndsConfig, Side, Status};
-use crate::tandem::{self, Array, FAMILY_K};
+use crate::tandem::{self, Array, CodeSet, FAMILY_K};
 use crate::{explore, open_fasta, utils};
 use anyhow::{bail, Context, Result};
 use clap::crate_version;
@@ -91,6 +91,8 @@ const LOW_DEPTH: f64 = 0.25;
 /// within GAP_NEAR_TIP bp of the tip is flagged (its tip is a separate contig).
 const MIN_GAP_RUN: usize = 10;
 const GAP_NEAR_TIP: usize = 5000;
+/// Reads are anchored in batches of about this many bases.
+const READ_BATCH_BASES: usize = 64 << 20;
 /// Overhangs analysed for tandem repeats per end.
 const OVERHANGS_PER_END: usize = 50;
 /// An overhang's top family must cover this fraction of it.
@@ -169,11 +171,11 @@ struct Family {
     period: usize,
     consensus: String,
     /// Canonical k-mers of the representative's consensus.
-    kmers: HashSet<u32>,
+    kmers: CodeSet,
     /// Canonical k-mers repeated in the representative.
-    repeated: HashSet<u32>,
+    repeated: CodeSet,
     /// k-mers of the representative array as read, for orientation.
-    forward: HashSet<u32>,
+    forward: CodeSet,
     telomeric: bool,
 }
 
@@ -399,6 +401,20 @@ pub fn caps(matches: &clap::ArgMatches) -> Result<()> {
     Ok(())
 }
 
+/// The next reads, up to about [`READ_BATCH_BASES`] bases.
+fn next_batch(records: &mut impl Iterator<Item = crate::fasta::Record>) -> Vec<crate::fasta::Record> {
+    let mut batch = Vec::new();
+    let mut bases = 0;
+    for r in records.by_ref() {
+        bases += r.seq().len();
+        batch.push(r);
+        if bases >= READ_BATCH_BASES {
+            break;
+        }
+    }
+    batch
+}
+
 /// What the reads say about one end.
 struct EndReads {
     id: String,
@@ -441,16 +457,29 @@ fn end_reads(
     let mut kept: Vec<Vec<(String, Vec<u8>)>> = vec![Vec::new(); baits.len()];
     let mut n_reads = 0usize;
     for path in reads {
-        let hits: Vec<(String, anchor::Hit)> = open_fasta(path)?
-            .records()
-            .par_bridge()
-            .filter_map(|r| {
-                let r = r.ok()?;
-                index
-                    .anchor(r.seq(), MIN_OVERHANG)
-                    .map(|h| (r.id().to_owned(), h))
-            })
-            .collect();
+        // Reads are anchored in parallel in batches, and taken in input
+        // order. (A record that fails to parse ends the file, as before.)
+        let mut records = open_fasta(path)?.records().map_while(|r| r.ok());
+        let mut batch = next_batch(&mut records);
+        let mut hits: Vec<(String, anchor::Hit)> = Vec::new();
+        while !batch.is_empty() {
+            // read the next batch while this one is anchored
+            let (next, anchored) = rayon::join(
+                || next_batch(&mut records),
+                || {
+                    batch
+                        .par_iter()
+                        .map(|r| {
+                            index
+                                .anchor(r.seq(), MIN_OVERHANG)
+                                .map(|h| (r.id().to_owned(), h))
+                        })
+                        .collect::<Vec<_>>()
+                },
+            );
+            hits.extend(anchored.into_iter().flatten());
+            batch = next;
+        }
         for (id, h) in hits {
             if -h.overhang <= DEPTH_AT && h.span_end >= DEPTH_AT + DEPTH_SPAN {
                 depth[h.end] += 1;
@@ -685,40 +714,71 @@ fn shared_sequence(windows: &[Window], arrays: &[&[Array]]) -> Vec<Shared> {
             (ks, rank)
         })
         .unzip();
-    // k-mer -> (window, reads forward, first position), once per window
-    type Index = HashMap<u32, Vec<(u32, bool, u32)>, BuildHasherDefault<anchor::KmerHasher>>;
-    let mut index: Index = HashMap::default();
+    // k-mer -> (window, reads forward, first position), once per window, in
+    // window order: entries sorted (stably) by k-mer, and each k-mer's range
+    let mut entries: Vec<(u32, (u32, bool, u32))> = Vec::new();
     for (w, ks) in kmers.iter().enumerate() {
-        let mut seen = HashSet::new();
+        let mut seen = CodeSet::default();
         for &(pos, c, f) in ks {
             if seen.insert(c) {
-                index.entry(c).or_default().push((w as u32, f, pos as u32));
+                entries.push((c, (w as u32, f, pos as u32)));
             }
         }
     }
+    entries.par_sort_by_key(|e| e.0);
+    let mut ranges: CodeMap<(u32, u32)> = CodeMap::default();
+    for (i, run) in entries
+        .chunk_by(|a, b| a.0 == b.0)
+        .scan(0usize, |start, run| {
+            let s = *start;
+            *start += run.len();
+            Some((s, run))
+        })
+    {
+        ranges.insert(run[0].0, (i as u32, run.len() as u32));
+    }
+    let entries: Vec<(u32, bool, u32)> = entries.into_iter().map(|e| e.1).collect();
+    let index = |c: &u32| -> &[(u32, bool, u32)] {
+        ranges
+            .get(c)
+            .map_or(&[], |&(s, n)| &entries[s as usize..(s + n) as usize])
+    };
+    // windows of one sequence (by id) share a number
+    let mut ids: HashMap<&str, usize> = HashMap::new();
+    let sequence: Vec<usize> = windows
+        .iter()
+        .map(|w| {
+            let n = ids.len();
+            *ids.entry(w.id.as_str()).or_insert(n)
+        })
+        .collect();
     (0..windows.len())
         .into_par_iter()
         .map(|a| {
             let wa = &windows[a];
-            // per partner: covered bp, end of the last k-mer counted, same, opposite
-            let mut cover: HashMap<u32, [usize; 4]> = HashMap::new();
+            // per partner (by window): covered bp, end of the last k-mer
+            // counted, same, opposite; partners with no hit stay at zero
+            let mut cover: Vec<[usize; 4]> = vec![[0; 4]; windows.len()];
             // end windows: same-orientation hits per partner, for tip copies,
             // as (rank in a, rank in b, position in a, position in b)
-            let mut hits: HashMap<u32, Vec<TipHit>> = HashMap::new();
+            let mut hits: Vec<Vec<TipHit>> = (0..windows.len()).map(|_| Vec::new()).collect();
             for &(pos, c, f) in &kmers[a] {
-                for &(b, fb, pb) in index.get(&c).into_iter().flatten() {
+                for &(b, fb, pb) in index(&c) {
                     let wb = &windows[b as usize];
-                    if b as usize == a || wb.kind.is_end() != wa.kind.is_end() || wb.id == wa.id {
+                    if b as usize == a
+                        || wb.kind.is_end() != wa.kind.is_end()
+                        || sequence[b as usize] == sequence[a]
+                    {
                         continue;
                     }
-                    let e = cover.entry(b).or_default();
+                    let e = &mut cover[b as usize];
                     let add = (pos + SHARED_K).saturating_sub(pos.max(e[1]));
                     e[0] += add;
                     e[1] = pos + SHARED_K;
                     e[if f == fb { 2 } else { 3 }] += add;
                     if wa.kind.is_end() && f == fb {
                         let pb = pb as usize;
-                        hits.entry(b).or_default().push(TipHit {
+                        hits[b as usize].push(TipHit {
                             ra: ranks[a][pos] as usize,
                             rb: ranks[b as usize][pb] as usize,
                             pa: pos,
@@ -729,7 +789,7 @@ fn shared_sequence(windows: &[Window], arrays: &[&[Array]]) -> Vec<Shared> {
             }
             let mut shared =
                 cover
-                    .values()
+                    .iter()
                     .filter(|e| e[0] >= MIN_SHARED)
                     .fold(Shared::default(), |s, e| Shared {
                         partners: s.partners + 1,
@@ -737,7 +797,7 @@ fn shared_sequence(windows: &[Window], arrays: &[&[Array]]) -> Vec<Shared> {
                         opposite: s.opposite + e[3],
                         ..s
                     });
-            for h in hits.values() {
+            for h in hits.iter().filter(|h| !h.is_empty()) {
                 if let Some(extent) = tip_copy(h) {
                     shared.tip_partners += 1;
                     shared.tip_extent = shared.tip_extent.max(extent);
@@ -887,13 +947,18 @@ fn discover_unit(windows: &[Window]) -> Result<Option<String>> {
 struct FamilyBuilder {
     families: Vec<Family>,
     /// Canonical consensus k-mers to families.
-    index: HashMap<u32, Vec<usize>>,
+    index: CodeMap<Vec<usize>>,
     /// Canonical repeated k-mers to families.
-    index_repeated: HashMap<u32, Vec<usize>>,
-    unit_kmers: HashSet<u32>,
+    index_repeated: CodeMap<Vec<usize>>,
+    unit_kmers: CodeSet,
 }
 
-fn canonical(set: &HashSet<u32>) -> HashSet<u32> {
+/// Maps from k-mer codes or family numbers, with a fast hash (nothing
+/// depends on their order).
+type CodeMap<V> = HashMap<u32, V, BuildHasherDefault<anchor::KmerHasher>>;
+type FamilyMap<V> = HashMap<usize, V, BuildHasherDefault<anchor::KmerHasher>>;
+
+fn canonical(set: &CodeSet) -> CodeSet {
     set.iter()
         .map(|&c| tandem::canonical_code(c, FAMILY_K))
         .collect()
@@ -901,11 +966,11 @@ fn canonical(set: &HashSet<u32>) -> HashSet<u32> {
 
 /// Jaccard similarity of a k-mer set to each family sharing any k-mer.
 fn similar(
-    set: &HashSet<u32>,
-    index: &HashMap<u32, Vec<usize>>,
+    set: &CodeSet,
+    index: &CodeMap<Vec<usize>>,
     size: impl Fn(usize) -> usize,
-) -> HashMap<usize, f64> {
-    let mut shared: HashMap<usize, usize> = HashMap::new();
+) -> FamilyMap<f64> {
+    let mut shared: FamilyMap<usize> = FamilyMap::default();
     for c in set {
         for &f in index.get(c).into_iter().flatten() {
             *shared.entry(f).or_default() += 1;
@@ -922,9 +987,9 @@ impl FamilyBuilder {
     fn new(unit: Option<&str>) -> Self {
         let mut b = FamilyBuilder {
             families: Vec::new(),
-            index: HashMap::new(),
-            index_repeated: HashMap::new(),
-            unit_kmers: HashSet::new(),
+            index: CodeMap::default(),
+            index_repeated: CodeMap::default(),
+            unit_kmers: CodeSet::default(),
         };
         if let Some(u) = unit {
             let forward = tandem::unit_kmers(u);

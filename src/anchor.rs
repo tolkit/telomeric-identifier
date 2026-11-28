@@ -54,6 +54,12 @@ impl Hasher for KmerHasher {
     fn write_u64(&mut self, n: u64) {
         self.0 = (self.0.rotate_left(5) ^ n).wrapping_mul(0x51_7c_c1_b7_27_22_0a_95);
     }
+    fn write_u32(&mut self, n: u32) {
+        self.write_u64(n as u64)
+    }
+    fn write_usize(&mut self, n: usize) {
+        self.write_u64(n as u64)
+    }
 }
 
 type KmerMap<V> = HashMap<u64, V, BuildHasherDefault<KmerHasher>>;
@@ -91,42 +97,55 @@ pub(crate) struct Hit {
     pub(crate) diverged: bool,
 }
 
-fn code(b: u8) -> Option<u64> {
-    match b {
-        b'A' | b'a' => Some(0),
-        b'C' | b'c' => Some(1),
-        b'G' | b'g' => Some(2),
-        b'T' | b't' => Some(3),
-        _ => None,
-    }
-}
+/// 2-bit codes of bases, 4 for anything else.
+const CODES: [u8; 256] = {
+    let mut t = [4u8; 256];
+    t[b'A' as usize] = 0;
+    t[b'a' as usize] = 0;
+    t[b'C' as usize] = 1;
+    t[b'c' as usize] = 1;
+    t[b'G' as usize] = 2;
+    t[b'g' as usize] = 2;
+    t[b'T' as usize] = 3;
+    t[b't' as usize] = 3;
+    t
+};
 
-/// Canonical k-mers of a sequence: (position, canonical code, reads forward).
-fn kmers(seq: &[u8], stride: usize) -> impl Iterator<Item = (usize, u64, bool)> + '_ {
+/// Call `f` with (position, canonical code, reads forward) for every
+/// [`K`]-mer without an N starting at a multiple of `stride`, in order.
+#[inline(always)]
+fn for_each_kmer(seq: &[u8], stride: usize, mut f: impl FnMut(usize, u64, bool)) {
     let mask = (1u64 << (2 * K)) - 1;
     let shift = 2 * (K - 1);
     let (mut fwd, mut rev, mut valid) = (0u64, 0u64, 0usize);
-    seq.iter().enumerate().filter_map(move |(i, &b)| {
-        match code(b) {
-            Some(c) => {
-                fwd = ((fwd << 2) | c) & mask;
-                rev = (rev >> 2) | ((3 - c) << shift);
-                valid += 1;
-            }
-            None => valid = 0,
-        }
-        if valid < K {
-            return None;
-        }
-        let start = i + 1 - K;
-        if !start.is_multiple_of(stride) {
-            None
-        } else if fwd <= rev {
-            Some((start, fwd, true))
+    for (i, &b) in seq.iter().enumerate() {
+        let c = CODES[b as usize];
+        if c < 4 {
+            let c = c as u64;
+            fwd = ((fwd << 2) | c) & mask;
+            rev = (rev >> 2) | ((3 - c) << shift);
+            valid += 1;
         } else {
-            Some((start, rev, false))
+            valid = 0;
         }
-    })
+        if valid >= K {
+            let start = i + 1 - K;
+            if start % stride == 0 {
+                if fwd <= rev {
+                    f(start, fwd, true)
+                } else {
+                    f(start, rev, false)
+                }
+            }
+        }
+    }
+}
+
+/// The k-mers of [`for_each_kmer`], collected.
+fn kmers(seq: &[u8], stride: usize) -> Vec<(usize, u64, bool)> {
+    let mut out = Vec::new();
+    for_each_kmer(seq, stride, |i, c, f| out.push((i, c, f)));
+    out
 }
 
 pub(crate) fn revcomp(seq: &[u8]) -> Vec<u8> {
@@ -183,7 +202,7 @@ impl Baits {
         // hits per (end, same strand): (diagonal, bait position)
         let mut hits: HashMap<(u32, bool), Vec<(i64, u32)>> = HashMap::new();
         let len = read.len() as i64;
-        for (i, c, forward) in kmers(read, STRIDE) {
+        for_each_kmer(read, STRIDE, |i, c, forward| {
             if let Some(Some(s)) = self.index.get(&c) {
                 let same = forward == s.forward;
                 // read coordinate along the bait's orientation
@@ -196,7 +215,7 @@ impl Baits {
                     .or_default()
                     .push((r - s.pos as i64, s.pos));
             }
-        }
+        });
         let ((end, same), mut h) = hits.into_iter().max_by_key(|(k, v)| (v.len(), *k))?;
         if h.len() < MIN_ANCHORS {
             return None;
@@ -251,10 +270,10 @@ impl Baits {
         let all = &self.all[end as usize];
         let limit = nearest + DIAGONAL_TOLERANCE as u32;
         let (mut n, mut found) = (0usize, 0usize);
-        for (_, c, _) in kmers(&read[from as usize..to as usize], REACH_STRIDE) {
+        for_each_kmer(&read[from as usize..to as usize], REACH_STRIDE, |_, c, _| {
             n += 1;
             found += all.get(&c).is_some_and(|&p| p < limit) as usize;
-        }
+        });
         n == 0 || found as f64 >= REACH_FRACTION * n as f64
     }
 }
