@@ -752,7 +752,7 @@ fn shared_sequence(windows: &[Window], arrays: &[&[Array]]) -> Vec<Shared> {
         }
     }
     entries.par_sort_by_key(|e| e.0);
-    let mut ranges: CodeMap<(u32, u32)> = CodeMap::default();
+    let mut ranges: CodeMap<(usize, usize)> = CodeMap::default();
     for (i, run) in entries
         .chunk_by(|a, b| a.0 == b.0)
         .scan(0usize, |start, run| {
@@ -761,13 +761,11 @@ fn shared_sequence(windows: &[Window], arrays: &[&[Array]]) -> Vec<Shared> {
             Some((s, run))
         })
     {
-        ranges.insert(run[0].0, (i as u32, run.len() as u32));
+        ranges.insert(run[0].0, (i, run.len()));
     }
     let entries: Vec<(u32, bool, u32)> = entries.into_iter().map(|e| e.1).collect();
     let index = |c: &u32| -> &[(u32, bool, u32)] {
-        ranges
-            .get(c)
-            .map_or(&[], |&(s, n)| &entries[s as usize..(s + n) as usize])
+        ranges.get(c).map_or(&[], |&(s, n)| &entries[s..s + n])
     };
     // windows of one sequence (by id) share a number
     let mut ids: HashMap<&str, usize> = HashMap::new();
@@ -778,44 +776,57 @@ fn shared_sequence(windows: &[Window], arrays: &[&[Array]]) -> Vec<Shared> {
             *ids.entry(w.id.as_str()).or_insert(n)
         })
         .collect();
-    (0..windows.len())
+    let n = windows.len();
+    (0..n)
         .into_par_iter()
-        .map(|a| {
-            let wa = &windows[a];
-            // per partner (by window): covered bp, end of the last k-mer
-            // counted, same, opposite; partners with no hit stay at zero
-            let mut cover: Vec<[usize; 4]> = vec![[0; 4]; windows.len()];
-            // end windows: same-orientation hits per partner, for tip copies,
-            // as (rank in a, rank in b, position in a, position in b)
-            let mut hits: Vec<Vec<TipHit>> = (0..windows.len()).map(|_| Vec::new()).collect();
-            for &(pos, c, f) in &kmers[a] {
-                for &(b, fb, pb) in index(&c) {
-                    let wb = &windows[b as usize];
-                    if b as usize == a
-                        || wb.kind.is_end() != wa.kind.is_end()
-                        || sequence[b as usize] == sequence[a]
-                    {
-                        continue;
-                    }
-                    let e = &mut cover[b as usize];
-                    let add = (pos + SHARED_K).saturating_sub(pos.max(e[1]));
-                    e[0] += add;
-                    e[1] = pos + SHARED_K;
-                    e[if f == fb { 2 } else { 3 }] += add;
-                    if wa.kind.is_end() && f == fb {
-                        let pb = pb as usize;
-                        hits[b as usize].push(TipHit {
-                            ra: ranks[a][pos] as usize,
-                            rb: ranks[b as usize][pb] as usize,
-                            pa: pos,
-                            pb,
-                        });
+        .map_init(
+            // per thread: dense per-partner counters, reset after each
+            // window through the list of partners it touched
+            || {
+                (
+                    vec![[0usize; 4]; n],
+                    (0..n).map(|_| Vec::new()).collect::<Vec<Vec<TipHit>>>(),
+                    Vec::new(),
+                )
+            },
+            |(cover, hits, touched): &mut (Vec<[usize; 4]>, Vec<Vec<TipHit>>, Vec<usize>), a| {
+                let wa = &windows[a];
+                // per partner (by window): covered bp, end of the last k-mer
+                // counted, same, opposite (cover), and for end windows the
+                // same-orientation hits, for tip copies, as (rank in a, rank in
+                // b, position in a, position in b)
+                for &(pos, c, f) in &kmers[a] {
+                    for &(b, fb, pb) in index(&c) {
+                        let wb = &windows[b as usize];
+                        if b as usize == a
+                            || wb.kind.is_end() != wa.kind.is_end()
+                            || sequence[b as usize] == sequence[a]
+                        {
+                            continue;
+                        }
+                        let e = &mut cover[b as usize];
+                        if e[0] == 0 {
+                            // a first hit always adds SHARED_K bp
+                            touched.push(b as usize);
+                        }
+                        let add = (pos + SHARED_K).saturating_sub(pos.max(e[1]));
+                        e[0] += add;
+                        e[1] = pos + SHARED_K;
+                        e[if f == fb { 2 } else { 3 }] += add;
+                        if wa.kind.is_end() && f == fb {
+                            let pb = pb as usize;
+                            hits[b as usize].push(TipHit {
+                                ra: ranks[a][pos] as usize,
+                                rb: ranks[b as usize][pb] as usize,
+                                pa: pos,
+                                pb,
+                            });
+                        }
                     }
                 }
-            }
-            let mut shared =
-                cover
+                let mut shared = touched
                     .iter()
+                    .map(|&b| &cover[b])
                     .filter(|e| e[0] >= MIN_SHARED)
                     .fold(Shared::default(), |s, e| Shared {
                         partners: s.partners + 1,
@@ -823,14 +834,21 @@ fn shared_sequence(windows: &[Window], arrays: &[&[Array]]) -> Vec<Shared> {
                         opposite: s.opposite + e[3],
                         ..s
                     });
-            for h in hits.iter().filter(|h| !h.is_empty()) {
-                if let Some(extent) = tip_copy(h) {
-                    shared.tip_partners += 1;
-                    shared.tip_extent = shared.tip_extent.max(extent);
+                for &b in touched.iter() {
+                    if !hits[b].is_empty() {
+                        if let Some(extent) = tip_copy(&hits[b]) {
+                            shared.tip_partners += 1;
+                            shared.tip_extent = shared.tip_extent.max(extent);
+                        }
+                    }
                 }
-            }
-            shared
-        })
+                for b in touched.drain(..) {
+                    cover[b] = [0; 4];
+                    hits[b].clear();
+                }
+                shared
+            },
+        )
         .collect()
 }
 

@@ -176,7 +176,9 @@ pub(crate) fn find_arrays(seq: &[u8], max_period: usize) -> Vec<Array> {
     // previous occurrence of each position's k-mer, and a histogram of the
     // lags to the nearest one
     let mut prev = vec![usize::MAX; codes.len()];
-    let mut hist = vec![0u32; max_period + 1];
+    // lags are shorter than the sequence, so the tables stop there
+    let limit = max_period.min(codes.len());
+    let mut hist = vec![0u32; limit + 1];
     let mut record = |i: usize, j: usize| {
         prev[i] = j;
         let d = i - j;
@@ -215,16 +217,20 @@ pub(crate) fn find_arrays(seq: &[u8], max_period: usize) -> Vec<Array> {
     }
 
     // candidate periods: best supported lags, with their indel tolerance
-    let mut cumulative = vec![0u32; max_period + 1];
-    for d in 1..=max_period {
+    let mut cumulative = vec![0u32; limit + 1];
+    for d in 1..=limit {
         cumulative[d] = cumulative[d - 1] + hist[d];
     }
+    // (no lag beyond `limit` has any support)
     let support = |d: usize| -> u32 {
         let t = tolerance(d);
-        let (lo, hi) = (d.saturating_sub(t).max(1), (d + t).min(max_period));
+        let (lo, hi) = (
+            d.saturating_sub(t).max(1),
+            (d + t).min(max_period).min(limit),
+        );
         cumulative[hi] - cumulative[lo - 1]
     };
-    let mut lags: Vec<(usize, u32)> = (1..=max_period)
+    let mut lags: Vec<(usize, u32)> = (1..=limit)
         .filter(|&d| hist[d] > 0)
         .map(|d| (d, support(d)))
         .collect();

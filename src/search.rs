@@ -1,7 +1,7 @@
 use crate::{open_fasta, utils, SubCommand};
 use anyhow::Result;
 use std::fs::{create_dir_all, File};
-use std::io::BufWriter;
+use std::io::LineWriter;
 use std::io::Write;
 use std::path::PathBuf;
 use std::str;
@@ -43,7 +43,7 @@ pub fn search(matches: &clap::ArgMatches, sc: SubCommand) -> Result<()> {
         extension
     );
     let search_file = File::create(file_name)?;
-    let mut search_file = BufWriter::new(search_file);
+    let mut search_file = LineWriter::new(search_file);
 
     // add headers if extension/file type is a csv
     if extension == "tsv" {
@@ -91,7 +91,7 @@ fn write_window_counts<T: std::io::Write>(
     let reverse_telomeric_seq = utils::reverse_complement(&forward_telomeric_seq).to_uppercase();
     let seq = sequence.seq();
     // non-ASCII sequence and empty strings are counted as before
-    if forward_telomeric_seq.is_empty() || !seq.is_ascii() {
+    if forward_telomeric_seq.is_empty() || !forward_telomeric_seq.is_ascii() || !seq.is_ascii() {
         return write_window_counts_bytewise(
             sequence,
             file,

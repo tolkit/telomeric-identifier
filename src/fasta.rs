@@ -130,6 +130,14 @@ fn inflate_block(block: &[u8]) -> Option<Vec<u8>> {
     (c.sum() == crc).then_some(out)
 }
 
+/// What the reading side gives the parser: input, the error that stopped
+/// it, or the end of the input.
+enum Msg {
+    Data(Vec<u8>),
+    Fail(io::Error),
+    End,
+}
+
 /// How reading a bgzip file in parallel ended.
 enum Bgzf {
     /// All of it was sent.
@@ -142,10 +150,7 @@ enum Bgzf {
 
 /// Send the inflated contents of a bgzip file in chunks, inflating blocks
 /// in parallel, as long as every block is whole and checks out.
-fn read_bgzf(file: &mut File, tx: &SyncSender<io::Result<Vec<u8>>>) -> Bgzf {
-    let threads = thread::available_parallelism()
-        .map_or(1, |n| n.get())
-        .min(BGZF_THREADS);
+fn read_bgzf(file: &mut File, tx: &SyncSender<Msg>, threads: usize) -> Bgzf {
     let mut buf: Vec<u8> = Vec::new();
     let mut eof = false;
     let mut sent = 0;
@@ -190,29 +195,37 @@ fn read_bgzf(file: &mut File, tx: &SyncSender<io::Result<Vec<u8>>>) -> Bgzf {
         }
         first = false;
         let stop = pos == usize::MAX;
-        // inflate, a contiguous share of blocks per thread
+        // inflate, a contiguous share of blocks per thread (in this thread
+        // if one can't be started)
         let per = blocks.len().div_ceil(threads).max(1);
+        let buf_ref = &buf;
+        let work = move |group: &[std::ops::Range<usize>]| -> Vec<Option<Vec<u8>>> {
+            group
+                .iter()
+                .map(|r| inflate_block(&buf_ref[r.clone()]))
+                .collect()
+        };
         let inflated: Vec<Option<Vec<u8>>> = thread::scope(|s| {
-            let handles: Vec<_> = blocks
+            let parts: Vec<_> = blocks
                 .chunks(per)
                 .map(|group| {
-                    let buf = &buf;
-                    s.spawn(move || {
-                        group
-                            .iter()
-                            .map(|r| inflate_block(&buf[r.clone()]))
-                            .collect::<Vec<_>>()
-                    })
+                    thread::Builder::new()
+                        .name("fasta-inflate".into())
+                        .spawn_scoped(s, move || work(group))
+                        .map_err(|_| work(group))
                 })
                 .collect();
-            handles
+            parts
                 .into_iter()
-                .flat_map(|h| h.join().unwrap())
+                .flat_map(|p| match p {
+                    Ok(h) => h.join().expect("a bgzip inflate thread panicked"),
+                    Err(done) => done,
+                })
                 .collect()
         });
         for out in inflated {
             let Some(out) = out else {
-                if !chunk.is_empty() && tx.send(Ok(std::mem::take(&mut chunk))).is_err() {
+                if !chunk.is_empty() && tx.send(Msg::Data(std::mem::take(&mut chunk))).is_err() {
                     return Bgzf::Disconnected;
                 }
                 return Bgzf::Fallback(sent);
@@ -221,12 +234,12 @@ fn read_bgzf(file: &mut File, tx: &SyncSender<io::Result<Vec<u8>>>) -> Bgzf {
             chunk.extend_from_slice(&out);
             if chunk.len() >= CHUNK {
                 let full = std::mem::replace(&mut chunk, Vec::with_capacity(CHUNK));
-                if tx.send(Ok(full)).is_err() {
+                if tx.send(Msg::Data(full)).is_err() {
                     return Bgzf::Disconnected;
                 }
             }
         }
-        if !chunk.is_empty() && tx.send(Ok(std::mem::take(&mut chunk))).is_err() {
+        if !chunk.is_empty() && tx.send(Msg::Data(std::mem::take(&mut chunk))).is_err() {
             return Bgzf::Disconnected;
         }
         if stop {
@@ -239,9 +252,98 @@ fn read_bgzf(file: &mut File, tx: &SyncSender<io::Result<Vec<u8>>>) -> Bgzf {
     }
 }
 
-/// Read a file (gzipped if it ends in `.gz`) on a thread, sending its bytes
-/// in chunks, then the error that stopped it, if any.
-fn spawn_reader(path: &Path) -> io::Result<Receiver<io::Result<Vec<u8>>>> {
+/// Reads input sequentially, in chunks: a plain file, or gzip through
+/// `MultiGzDecoder` in 8 KiB reads, leaving out the first `skip` bytes.
+struct Producer {
+    source: Box<dyn Read + Send>,
+    step: usize,
+    skip: usize,
+    /// What comes after the chunk last given (the end, or an error).
+    pending: Option<Msg>,
+}
+
+impl Producer {
+    fn new(file: File, gz: bool, skip: usize) -> Self {
+        let (source, step): (Box<dyn Read + Send>, usize) = if gz {
+            (Box::new(MultiGzDecoder::new(file)), GZ_READ)
+        } else {
+            (Box::new(file), CHUNK)
+        };
+        Producer {
+            source,
+            step,
+            skip,
+            pending: None,
+        }
+    }
+
+    /// The next chunk, then the end or the error that stopped the input.
+    fn next(&mut self) -> Msg {
+        loop {
+            if let Some(m) = self.pending.take() {
+                return m;
+            }
+            let mut chunk = vec![0u8; CHUNK];
+            let mut filled = 0;
+            let mut stop = None;
+            while filled + self.step <= CHUNK {
+                match self.source.read(&mut chunk[filled..filled + self.step]) {
+                    Ok(0) => {
+                        stop = Some(Msg::End);
+                        break;
+                    }
+                    Ok(n) => filled += n,
+                    Err(e) if e.kind() == io::ErrorKind::Interrupted => {}
+                    Err(e) => {
+                        stop = Some(Msg::Fail(e));
+                        break;
+                    }
+                }
+            }
+            chunk.truncate(filled);
+            if self.skip >= filled {
+                self.skip -= filled;
+                chunk.clear();
+            } else if self.skip > 0 {
+                chunk.drain(..self.skip);
+                self.skip = 0;
+            }
+            if !chunk.is_empty() {
+                self.pending = stop;
+                return Msg::Data(chunk);
+            }
+            if let Some(m) = stop {
+                return m;
+            }
+        }
+    }
+}
+
+/// Where the parser's input comes from.
+enum Source {
+    /// A reading thread.
+    Thread(Receiver<Msg>),
+    /// This thread, if a reading thread couldn't be started.
+    Inline(Producer),
+}
+
+impl Source {
+    fn next(&mut self) -> Msg {
+        match self {
+            Source::Thread(rx) => rx.recv().unwrap_or_else(|_| {
+                // the thread ended without saying so (it panicked)
+                Msg::Fail(io::Error::other(
+                    "the FASTA reading thread stopped before the end of the input",
+                ))
+            }),
+            Source::Inline(p) => p.next(),
+        }
+    }
+}
+
+/// Open a file (gzipped if it ends in `.gz`) to be read on its own thread,
+/// bgzip blocks inflated in parallel.
+fn open_source(path: &Path) -> io::Result<Source> {
     let mut file = File::open(path)?;
     let gz = path.extension().and_then(|e| e.to_str()) == Some("gz");
     // a bgzip file? Only regular files are looked at (and rewound); any
@@ -253,76 +355,49 @@ fn spawn_reader(path: &Path) -> io::Result<Receiver<io::Result<Vec<u8>>>> {
         bgzf = file.read_exact(&mut header).is_ok() && bgzf_block_len(&header).is_some();
         file.seek(SeekFrom::Start(0))?;
     }
+    // inflate threads: no more than the thread pool has (`caps -t`)
+    let threads = rayon::current_num_threads().clamp(1, BGZF_THREADS);
     let (tx, rx) = sync_channel(if bgzf { BGZF_IN_FLIGHT } else { IN_FLIGHT });
-    thread::Builder::new()
+    let spawned = thread::Builder::new()
         .name("fasta-reader".into())
         .spawn(move || {
             // bytes already sent from the bgzip blocks, not to send again
             let mut skip = 0;
             if bgzf {
-                match read_bgzf(&mut file, &tx) {
-                    Bgzf::Done | Bgzf::Disconnected => return,
+                match read_bgzf(&mut file, &tx, threads) {
+                    Bgzf::Done => {
+                        let _ = tx.send(Msg::End);
+                        return;
+                    }
+                    Bgzf::Disconnected => return,
                     Bgzf::Fallback(sent) => {
                         if let Err(e) = file.seek(SeekFrom::Start(0)) {
-                            let _ = tx.send(Err(e));
+                            let _ = tx.send(Msg::Fail(e));
                             return;
                         }
                         skip = sent;
                     }
                 }
             }
-            let (mut source, step): (Box<dyn Read>, usize) = if gz {
-                (Box::new(MultiGzDecoder::new(file)), GZ_READ)
-            } else {
-                (Box::new(file), CHUNK)
-            };
+            let mut producer = Producer::new(file, gz, skip);
             loop {
-                let mut chunk = vec![0u8; CHUNK];
-                let mut filled = 0;
-                let mut stop = None;
-                while filled + step <= CHUNK {
-                    match source.read(&mut chunk[filled..filled + step]) {
-                        Ok(0) => {
-                            stop = Some(None);
-                            break;
-                        }
-                        Ok(n) => filled += n,
-                        Err(e) if e.kind() == io::ErrorKind::Interrupted => {}
-                        Err(e) => {
-                            stop = Some(Some(e));
-                            break;
-                        }
-                    }
-                }
-                chunk.truncate(filled);
-                if skip >= filled {
-                    skip -= filled;
-                } else {
-                    if skip > 0 {
-                        chunk.drain(..skip);
-                        skip = 0;
-                    }
-                    if tx.send(Ok(chunk)).is_err() {
-                        return;
-                    }
-                }
-                match stop {
-                    // end of input: dropping the sender tells the parser
-                    Some(None) => return,
-                    Some(Some(e)) => {
-                        let _ = tx.send(Err(e));
-                        return;
-                    }
-                    None => {}
+                let m = producer.next();
+                let last = !matches!(m, Msg::Data(_));
+                if tx.send(m).is_err() || last {
+                    return;
                 }
             }
-        })?;
-    Ok(rx)
+        });
+    match spawned {
+        Ok(_) => Ok(Source::Thread(rx)),
+        // no thread: read here instead, from the start
+        Err(_) => Ok(Source::Inline(Producer::new(File::open(path)?, gz, 0))),
+    }
 }
 
 /// A FASTA reader.
 pub struct Reader {
-    rx: Receiver<io::Result<Vec<u8>>>,
+    source: Source,
     /// Unparsed input is `data[pos..]`.
     data: Vec<u8>,
     pos: usize,
@@ -339,7 +414,7 @@ impl Reader {
     /// Open a FASTA file, gzipped if its name ends in `.gz`.
     pub fn from_path<P: AsRef<Path>>(path: P) -> io::Result<Self> {
         Ok(Reader {
-            rx: spawn_reader(path.as_ref())?,
+            source: open_source(path.as_ref())?,
             data: Vec::new(),
             pos: 0,
             done: false,
@@ -369,19 +444,19 @@ impl Reader {
                 searched -= self.pos;
                 self.pos = 0;
             }
-            match self.rx.recv() {
-                Ok(Ok(chunk)) => {
+            match self.source.next() {
+                Msg::Data(chunk) => {
                     if self.data.is_empty() {
                         self.data = chunk;
                     } else {
                         self.data.extend_from_slice(&chunk);
                     }
                 }
-                Ok(Err(e)) => {
+                Msg::Fail(e) => {
                     self.done = true;
                     return Err(e);
                 }
-                Err(_) => self.done = true,
+                Msg::End => self.done = true,
             }
         }
     }

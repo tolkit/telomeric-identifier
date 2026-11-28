@@ -1,7 +1,7 @@
 use crate::{clades, open_fasta, utils, SubCommand};
 use anyhow::{bail, Context, Result};
 use std::fs::{create_dir_all, File};
-use std::io::BufWriter;
+use std::io::LineWriter;
 use std::io::Write;
 use std::path::PathBuf;
 use std::process;
@@ -78,7 +78,7 @@ pub fn finder(matches: &clap::ArgMatches, sc: SubCommand) -> Result<()> {
         "_telomeric_repeat_windows.tsv"
     );
     let finder_file = File::create(file_name)?;
-    let mut finder_file = BufWriter::new(finder_file);
+    let mut finder_file = LineWriter::new(finder_file);
     // add headers
     writeln!(
         finder_file,
@@ -145,7 +145,7 @@ fn write_window_counts<T: std::io::Write>(
 
         // ASCII sequence: count windows in parallel (as below, same counts)
         let seq = sequence.seq();
-        if !forward_telomeric_seq.is_empty() && seq.is_ascii() {
+        if !forward_telomeric_seq.is_empty() && forward_telomeric_seq.is_ascii() && seq.is_ascii() {
             let counts = utils::window_counts(
                 seq,
                 window_size,

@@ -158,20 +158,6 @@ fn explore_lengths(
 ) -> Result<(Vec<RepeatPositions>, Vec<Vec<String>>)> {
     let reader = open_fasta(input_fasta)?;
     let kept: Vec<Mutex<Vec<String>>> = lengths.iter().map(|_| Mutex::new(Vec::new())).collect();
-    let print = |m: String| eprintln!("{m}");
-    let keep: Vec<Box<dyn Fn(String) + Sync + '_>> = kept
-        .iter()
-        .map(|k| Box::new(move |m: String| k.lock().unwrap().push(m)) as Box<dyn Fn(String) + Sync>)
-        .collect();
-    let log = |i: usize| -> Log {
-        if !verbose {
-            None
-        } else if i == 0 {
-            Some(&print)
-        } else {
-            Some(keep[i].as_ref())
-        }
-    };
 
     let (sender, receiver) = channel();
     reader
@@ -190,27 +176,42 @@ fn explore_lengths(
             let tasks: Vec<(usize, usize)> = (0..lengths.len())
                 .flat_map(|i| (0..2).map(move |a| (i, a)))
                 .collect();
-            let found: Vec<RepeatPositions> = tasks
+            let found: Vec<(usize, Option<RepeatPositions>, Vec<String>)> = tasks
                 .into_par_iter()
-                .filter_map(|(i, a)| {
+                .map(|(i, a)| {
                     let (sequence, length) = (&sequences[a], lengths[i]);
+                    // this task's messages, given out below in task order
+                    let messages = Mutex::new(Vec::new());
+                    let push = |m: String| messages.lock().unwrap().push(m);
+                    let log: Log = verbose.then_some(&push);
                     let positions = if error_tolerant {
-                        tolerant_positions(sequence, length, log(i), id, threshold)
+                        tolerant_positions(sequence, length, log, id, threshold)
                     } else {
-                        exact_positions(sequence, length, log(i), id, threshold)
+                        exact_positions(sequence, length, log, id, threshold)
                     };
-                    positions.map(|mut r| {
+                    let positions = positions.map(|mut r| {
                         r.shift(offsets[a]);
                         r
-                    })
+                    });
+                    (i, positions, messages.into_inner().unwrap())
                 })
                 .collect();
-            for r in found {
-                s.send(r).expect("Did not send!");
+            // the first length's messages now, the others' after the pass;
+            // a record's arms in order, as a pass per length gave them
+            for (i, positions, messages) in found {
+                for m in messages {
+                    if i == 0 {
+                        eprintln!("{m}");
+                    } else {
+                        kept[i].lock().unwrap().push(m);
+                    }
+                }
+                if let Some(r) = positions {
+                    s.send(r).expect("Did not send!");
+                }
             }
         });
 
-    drop(keep);
     let messages = kept.into_iter().map(|k| k.into_inner().unwrap()).collect();
     Ok((receiver.into_iter().collect(), messages))
 }
@@ -836,11 +837,13 @@ fn tolerant_scan(seq: &[u8], k: usize, mut emit: impl FnMut(usize, usize, &[u8])
         }
     };
     let x_drop = 2 * k as i64 + ROTATION_SWITCH_PENALTY;
-    // rotation r of the seed at [r * k, (r + 1) * k)
-    let mut rotations = vec![0u8; k * k];
-    let mut packed_rotations = vec![0u128; k];
+    // rotation r of the seed at [r * k, (r + 1) * k), allocated at the first
+    // seed (as the reference allocated per seed), so a huge k costs nothing
+    // where there are no runs
+    let mut rotations: Vec<u8> = Vec::new();
+    let mut packed_rotations: Vec<u128> = Vec::new();
     let (mut forward, mut backward) = (Vec::new(), Vec::new());
-    let mut unit = vec![0u8; k];
+    let mut unit: Vec<u8> = Vec::new();
 
     // as `best_rotation`: stay on the current rotation unless another,
     // paying the switch penalty, scores higher; the first such on ties
@@ -904,6 +907,11 @@ fn tolerant_scan(seq: &[u8], k: usize, mut emit: impl FnMut(usize, usize, &[u8])
         if a[0] != b[0] || a != b {
             i += 1;
             continue;
+        }
+        if rotations.is_empty() {
+            rotations = vec![0u8; k * k];
+            packed_rotations = vec![0u128; k];
+            unit = vec![0u8; k];
         }
         for r in 0..k {
             let rot = &mut rotations[r * k..(r + 1) * k];
