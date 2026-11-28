@@ -307,9 +307,8 @@ pub(crate) fn telomere_blocks(window: &[u8], config: &EndsConfig) -> Vec<Block> 
     // is a rotation of the unit or of its reverse complement, and reads as
     // the unit (explore::orientation) when it is a rotation of the unit.
     let acgt = !unit.is_empty() && unit.iter().all(|b| b"ACGT".contains(b));
-    let rotations = |u: &[u8]| -> Vec<Vec<u8>> {
-        (0..u.len()).map(|r| [&u[r..], &u[..r]].concat()).collect()
-    };
+    let rotations =
+        |u: &[u8]| -> Vec<Vec<u8>> { (0..u.len()).map(|r| [&u[r..], &u[..r]].concat()).collect() };
     let revcomp = utils::reverse_complement(&config.unit);
     let (of_unit, of_revcomp) = if acgt {
         (rotations(unit), rotations(revcomp.as_bytes()))

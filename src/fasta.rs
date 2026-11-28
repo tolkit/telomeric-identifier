@@ -102,9 +102,7 @@ fn ascii_whitespace(b: u8) -> bool {
 /// Is this the start of a BGZF block (a gzip member with only the BC extra
 /// field)? Returns the block length.
 fn bgzf_block_len(h: &[u8]) -> Option<usize> {
-    (h.len() >= 18
-        && h[..4] == [0x1f, 0x8b, 8, 4]
-        && h[10..16] == [6, 0, b'B', b'C', 2, 0])
+    (h.len() >= 18 && h[..4] == [0x1f, 0x8b, 8, 4] && h[10..16] == [6, 0, b'B', b'C', 2, 0])
         .then(|| u16::from_le_bytes([h[16], h[17]]) as usize + 1)
 }
 
@@ -123,7 +121,8 @@ fn inflate_block(block: &[u8]) -> Option<Vec<u8>> {
     let mut out = Vec::with_capacity(size + 1);
     let mut d = flate2::Decompress::new(false);
     match d.decompress_vec(cdata, &mut out, flate2::FlushDecompress::Finish) {
-        Ok(flate2::Status::StreamEnd) if d.total_in() as usize == cdata.len() && out.len() == size => {}
+        Ok(flate2::Status::StreamEnd)
+            if d.total_in() as usize == cdata.len() && out.len() == size => {}
         _ => return None,
     }
     let mut c = flate2::Crc::new();
@@ -144,7 +143,9 @@ enum Bgzf {
 /// Send the inflated contents of a bgzip file in chunks, inflating blocks
 /// in parallel, as long as every block is whole and checks out.
 fn read_bgzf(file: &mut File, tx: &SyncSender<io::Result<Vec<u8>>>) -> Bgzf {
-    let threads = thread::available_parallelism().map_or(1, |n| n.get()).min(BGZF_THREADS);
+    let threads = thread::available_parallelism()
+        .map_or(1, |n| n.get())
+        .min(BGZF_THREADS);
     let mut buf: Vec<u8> = Vec::new();
     let mut eof = false;
     let mut sent = 0;
@@ -399,10 +400,7 @@ impl Reader {
         }
         let header = std::str::from_utf8(&self.line).map_err(|_| invalid_utf8())?;
         if !header.starts_with('>') {
-            return Err(io::Error::new(
-                io::ErrorKind::Other,
-                "Expected > at record start.",
-            ));
+            return Err(io::Error::other("Expected > at record start."));
         }
         let mut fields = header[1..].trim_end().splitn(2, char::is_whitespace);
         record.id = fields.next().map(|s| s.to_owned()).unwrap();

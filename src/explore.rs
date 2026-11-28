@@ -241,12 +241,7 @@ pub struct ChunkedFasta {
 /// Chunk a fasta into a [`Vec<ChunkedFasta>`], i.e. split a fasta into chunks
 /// and compare adjacent chunks for equality. Store the positions and sequences
 /// if they are equivalent.
-fn chunk_fasta(
-    sequence: &[u8],
-    chunk_length: usize,
-    log: Log,
-    id: String,
-) -> Vec<ChunkedFasta> {
+fn chunk_fasta(sequence: &[u8], chunk_length: usize, log: Log, id: String) -> Vec<ChunkedFasta> {
     let sequence_len = sequence.len();
     let chunks = sequence.chunks(chunk_length);
     // catch edge cases where chunk length greater than sequence length.
@@ -485,7 +480,8 @@ fn filtered_runs(
     // as RepeatPosition::get_count and is_simple_repeat
     let mut take = |start: usize, end: usize, unit: &[u8]| {
         any = true;
-        if (end - start) / unit.len() > frequency && smallest_period(unit) >= REPEAT_PERIOD_THRESHOLD
+        if (end - start) / unit.len() > frequency
+            && smallest_period(unit) >= REPEAT_PERIOD_THRESHOLD
         {
             kept.push(RepeatPosition {
                 id: id.to_string(),
@@ -499,7 +495,9 @@ fn filtered_runs(
         scan_runs(sequence, k, true, &mut take);
     } else {
         // every run, simple repeats too, for whether there are any
-        exact_scan(sequence, k, |start, end, unit| take(start * k, end * k, unit));
+        exact_scan(sequence, k, |start, end, unit| {
+            take(start * k, end * k, unit)
+        });
     }
     (any, kept)
 }
@@ -670,14 +668,19 @@ pub(crate) fn find_runs(
     error_tolerant: bool,
 ) -> Vec<RepeatPosition> {
     let mut runs = Vec::new();
-    scan_runs(sequence, chunk_length, error_tolerant, |start, end, unit| {
-        runs.push(RepeatPosition {
-            id: id.to_string(),
-            start,
-            end,
-            sequence: String::from_utf8_lossy(unit).into_owned(),
-        })
-    });
+    scan_runs(
+        sequence,
+        chunk_length,
+        error_tolerant,
+        |start, end, unit| {
+            runs.push(RepeatPosition {
+                id: id.to_string(),
+                start,
+                end,
+                sequence: String::from_utf8_lossy(unit).into_owned(),
+            })
+        },
+    );
     runs
 }
 
@@ -821,7 +824,11 @@ fn tolerant_scan(seq: &[u8], k: usize, mut emit: impl FnMut(usize, usize, &[u8])
     // packed chunks, for the comparisons with rotations of the seed
     let pchunk = |i: usize| -> u128 {
         if i * k + 16 <= seq.len() {
-            let mask = if k == 16 { u128::MAX } else { (1u128 << (8 * k)) - 1 };
+            let mask = if k == 16 {
+                u128::MAX
+            } else {
+                (1u128 << (8 * k)) - 1
+            };
             u128::from_le_bytes(seq[i * k..i * k + 16].try_into().unwrap()) & mask
         } else {
             pack(chunk(i))
@@ -940,8 +947,15 @@ fn tolerant_scan(seq: &[u8], k: usize, mut emit: impl FnMut(usize, usize, &[u8])
             let (base, count) = counts
                 .iter()
                 .enumerate()
-                .fold((0usize, 0u32), |best, (b, &n)| if n > best.1 { (b, n) } else { best });
-            *u = if count > seed_count { base as u8 } else { seed_base };
+                .fold(
+                    (0usize, 0u32),
+                    |best, (b, &n)| if n > best.1 { (b, n) } else { best },
+                );
+            *u = if count > seed_count {
+                base as u8
+            } else {
+                seed_base
+            };
             for c in start..end {
                 let r = rotation_of(c);
                 counts[chunk(c)[(p + k - r) % k] as usize] = 0;
@@ -964,9 +978,11 @@ pub(crate) fn top_unit(
     threshold: usize,
     error_tolerant: bool,
 ) -> Result<Option<(String, Option<f64>)>> {
-    Ok(top_units(sequences, minimum, maximum, threshold, error_tolerant)?
-        .into_iter()
-        .next())
+    Ok(
+        top_units(sequences, minimum, maximum, threshold, error_tolerant)?
+            .into_iter()
+            .next(),
+    )
 }
 
 /// As [`top_unit()`], every candidate unit, most abundant first.
@@ -1567,8 +1583,16 @@ mod tests {
             (state >> 33) % n
         };
         let units = [
-            "TTAGG", "AACCCT", "TTTAGGG", "A", "AT", "AAT", "ACGTTGCAAGTC", "TTAGGTTAGGTTAGGT",
-            "ACGTACGTAAGGTTCCAGT", "CCTAA",
+            "TTAGG",
+            "AACCCT",
+            "TTTAGGG",
+            "A",
+            "AT",
+            "AAT",
+            "ACGTTGCAAGTC",
+            "TTAGGTTAGGTTAGGT",
+            "ACGTACGTAAGGTTCCAGT",
+            "CCTAA",
         ];
         let mut cases = Vec::new();
         for c in 0..120 {
@@ -1661,7 +1685,18 @@ mod tests {
 
     #[test]
     fn test_smallest_period_matches_check_repeats() {
-        for s in ["A", "AA", "AB", "ABA", "ABAB", "AACCT", "AAAAAAAA", "ATATATAT", "AATAATAAT", "ABCABCAB"] {
+        for s in [
+            "A",
+            "AA",
+            "AB",
+            "ABA",
+            "ABAB",
+            "AACCT",
+            "AAAAAAAA",
+            "ATATATAT",
+            "AATAATAAT",
+            "ABCABCAB",
+        ] {
             assert_eq!(smallest_period(s.as_bytes()), check_repeats(s), "{s}");
         }
     }

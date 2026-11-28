@@ -130,7 +130,7 @@ fn for_each_kmer(seq: &[u8], stride: usize, mut f: impl FnMut(usize, u64, bool))
         }
         if valid >= K {
             let start = i + 1 - K;
-            if start % stride == 0 {
+            if start.is_multiple_of(stride) {
                 if fwd <= rev {
                     f(start, fwd, true)
                 } else {
@@ -270,10 +270,14 @@ impl Baits {
         let all = &self.all[end as usize];
         let limit = nearest + DIAGONAL_TOLERANCE as u32;
         let (mut n, mut found) = (0usize, 0usize);
-        for_each_kmer(&read[from as usize..to as usize], REACH_STRIDE, |_, c, _| {
-            n += 1;
-            found += all.get(&c).is_some_and(|&p| p < limit) as usize;
-        });
+        for_each_kmer(
+            &read[from as usize..to as usize],
+            REACH_STRIDE,
+            |_, c, _| {
+                n += 1;
+                found += all.get(&c).is_some_and(|&p| p < limit) as usize;
+            },
+        );
         n == 0 || found as f64 >= REACH_FRACTION * n as f64
     }
 }

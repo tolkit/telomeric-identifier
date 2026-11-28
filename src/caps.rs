@@ -426,7 +426,9 @@ pub fn caps(matches: &clap::ArgMatches) -> Result<()> {
 }
 
 /// The next reads, up to about [`READ_BATCH_BASES`] bases.
-fn next_batch(records: &mut impl Iterator<Item = crate::fasta::Record>) -> Vec<crate::fasta::Record> {
+fn next_batch(
+    records: &mut impl Iterator<Item = crate::fasta::Record>,
+) -> Vec<crate::fasta::Record> {
     let mut batch = Vec::new();
     let mut bases = 0;
     for r in records.by_ref() {
