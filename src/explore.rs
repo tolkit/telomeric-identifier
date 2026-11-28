@@ -7,6 +7,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::str;
 use std::sync::mpsc::channel;
+use std::sync::Mutex;
 
 // when distance == 1, we get lower estimate of telomeric repeat number
 // than if we use distance == 0.1
@@ -65,34 +66,44 @@ pub fn explore(matches: &clap::ArgMatches, sc: SubCommand) -> Result<()> {
         eprintln!("[+]\tOnly counting runs of exactly identical repeats");
     }
 
-    // to report the telomeres...
-    let mut output_vec: Vec<RepeatPositions> = Vec::new();
     // i.e. if you chose a length, as opposed to a minmum/maximum
-    if length > 0 {
+    let lengths: Vec<usize> = if length > 0 {
         eprintln!("[+]\tExploring genome for potential telomeric repeats of length: {length}");
-        output_vec.append(&mut explore_length(
-            input_fasta,
-            length,
-            dist_from_chromosome_end,
-            verbose,
-            threshold as usize,
-            error_tolerant,
-        )?);
+        vec![length]
     } else {
         // if a range was chosen.
         eprintln!(
             "[+]\tExploring genome for potential telomeric repeats between lengths {minimum} and {maximum}."
         );
-        for length in minimum..maximum + 1 {
-            eprintln!("[+]\t\tFinding telomeric repeat length: {length}");
-            output_vec.append(&mut explore_length(
-                input_fasta,
-                length,
-                dist_from_chromosome_end,
-                verbose,
-                threshold as usize,
-                error_tolerant,
-            )?);
+        (minimum..maximum + 1).collect()
+    };
+    // All lengths are explored in one pass over the input. Progress and
+    // verbose messages come out as if each length had its own pass: those of
+    // the first length as they happen, the others after the pass, each
+    // after its own "Finding" line.
+    let range = length == 0;
+    let finding = |l: usize| {
+        if range {
+            eprintln!("[+]\t\tFinding telomeric repeat length: {l}");
+        }
+    };
+    let mut output_vec: Vec<RepeatPositions> = Vec::new();
+    if let Some(&first) = lengths.first() {
+        finding(first);
+        let (mut positions, messages) = explore_lengths(
+            input_fasta,
+            &lengths,
+            dist_from_chromosome_end,
+            verbose,
+            threshold as usize,
+            error_tolerant,
+        )?;
+        output_vec.append(&mut positions);
+        for (&l, messages) in lengths.iter().zip(messages).skip(1) {
+            finding(l);
+            for m in messages {
+                eprintln!("{m}");
+            }
         }
     }
     eprintln!("[+]\tFinished searching genome");
@@ -128,54 +139,84 @@ pub fn explore(matches: &clap::ArgMatches, sc: SubCommand) -> Result<()> {
     Ok(())
 }
 
-/// Scan every record in the fasta for tandem runs of a single
-/// kmer length. Run coordinates are relative to the whole record,
-/// so runs found at different lengths can be merged later.
-fn explore_length(
+/// Where verbose messages go: printed, or kept to print later.
+type Log<'a> = Option<&'a (dyn Fn(String) + Sync)>;
+
+/// Scan every record in the fasta for tandem runs of each kmer length, in
+/// one pass. Run coordinates are relative to the whole record, so runs found
+/// at different lengths can be merged later. Verbose messages for the first
+/// length are printed as they happen; those for the others are returned, per
+/// length, to print later.
+fn explore_lengths(
     input_fasta: &PathBuf,
-    length: usize,
+    lengths: &[usize],
     dist_from_chromosome_end: f64,
     verbose: bool,
     threshold: usize,
     error_tolerant: bool,
-) -> Result<Vec<RepeatPositions>> {
+) -> Result<(Vec<RepeatPositions>, Vec<Vec<String>>)> {
     let reader = open_fasta(input_fasta)?;
+    let kept: Vec<Mutex<Vec<String>>> = lengths.iter().map(|_| Mutex::new(Vec::new())).collect();
+    let print = |m: String| eprintln!("{m}");
+    let keep: Vec<Box<dyn Fn(String) + Sync + '_>> = kept
+        .iter()
+        .map(|k| Box::new(move |m: String| k.lock().unwrap().push(m)) as Box<dyn Fn(String) + Sync>)
+        .collect();
+    let log = |i: usize| -> Log {
+        if !verbose {
+            None
+        } else if i == 0 {
+            Some(&print)
+        } else {
+            Some(keep[i].as_ref())
+        }
+    };
 
-    // try parallelising
     let (sender, receiver) = channel();
-
     reader
         .records()
         .par_bridge()
         .for_each_with(sender, |s, record| {
             let record = record.expect("[-]\tError during fasta record parsing.");
-            let id = record.id().to_owned();
+            let id = record.id();
             let seq_len = record.seq().len();
 
-            let sequences = split_seq_by_distance(record, dist_from_chromosome_end, seq_len);
+            let sequences = split_seq_by_distance(&record, dist_from_chromosome_end, seq_len);
             // the right hand arm starts this far into the record
             let offsets = [0, seq_len - sequences[1].len()];
 
-            for (sequence, offset) in sequences.into_iter().zip(offsets) {
-                let positions = if error_tolerant {
-                    tolerant_positions(&sequence, length, verbose, &id, threshold)
-                } else {
-                    let indexes = chunk_fasta(sequence, length, verbose, id.clone());
-                    calculate_indexes(indexes, length, verbose, id.clone(), threshold)
-                };
-
-                if let Some(mut r) = positions {
-                    r.shift(offset);
-                    s.send(r).expect("Did not send!");
-                }
+            // each length, then each arm, as separate passes would have
+            let tasks: Vec<(usize, usize)> = (0..lengths.len())
+                .flat_map(|i| (0..2).map(move |a| (i, a)))
+                .collect();
+            let found: Vec<RepeatPositions> = tasks
+                .into_par_iter()
+                .filter_map(|(i, a)| {
+                    let (sequence, length) = (&sequences[a], lengths[i]);
+                    let positions = if error_tolerant {
+                        tolerant_positions(sequence, length, log(i), id, threshold)
+                    } else {
+                        let indexes = chunk_fasta(sequence, length, log(i), id.to_string());
+                        calculate_indexes(indexes, length, log(i), id.to_string(), threshold)
+                    };
+                    positions.map(|mut r| {
+                        r.shift(offsets[a]);
+                        r
+                    })
+                })
+                .collect();
+            for r in found {
+                s.send(r).expect("Did not send!");
             }
         });
 
-    Ok(receiver.into_iter().collect())
+    drop(keep);
+    let messages = kept.into_iter().map(|k| k.into_inner().unwrap()).collect();
+    Ok((receiver.into_iter().collect(), messages))
 }
 
 pub fn split_seq_by_distance(
-    sequence: crate::fasta::Record,
+    sequence: &crate::fasta::Record,
     dist_from_chromosome_end: f64,
     seq_len: usize,
 ) -> [Vec<u8>; 2] {
@@ -202,20 +243,20 @@ pub struct ChunkedFasta {
 /// and compare adjacent chunks for equality. Store the positions and sequences
 /// if they are equivalent.
 fn chunk_fasta(
-    sequence: Vec<u8>,
+    sequence: &[u8],
     chunk_length: usize,
-    verbose: bool,
+    log: Log,
     id: String,
 ) -> Vec<ChunkedFasta> {
     let sequence_len = sequence.len();
     let chunks = sequence.chunks(chunk_length);
     // catch edge cases where chunk length greater than sequence length.
     if sequence_len <= chunk_length {
-        if verbose {
-            eprintln!(
+        if let Some(log) = log {
+            log(format!(
                 "[-]\tChunk length ({chunk_length}) greater than filtered sequence length ({sequence_len}) for {id}
 [-]\tConsider increasing proportion of chromosome length covered. Skipping."
-            );
+            ));
         }
         return vec![];
     }
@@ -312,7 +353,7 @@ impl RepeatPositions {
 fn calculate_indexes(
     indexes: Vec<ChunkedFasta>,
     chunk_length: usize,
-    verbose: bool,
+    log: Log,
     id: String,
     frequency: usize,
 ) -> Option<RepeatPositions> {
@@ -358,10 +399,10 @@ fn calculate_indexes(
         }
     }
     if collection.is_empty() {
-        if verbose {
-            eprintln!(
+        if let Some(log) = log {
+            log(format!(
                 "[-]\t\tChromosome {id}: No consecutive repeats of length {chunk_length} were identified."
-            );
+            ));
         }
         None
     } else {
@@ -375,16 +416,16 @@ fn calculate_indexes(
 fn tolerant_positions(
     sequence: &[u8],
     chunk_length: usize,
-    verbose: bool,
+    log: Log,
     id: &str,
     frequency: usize,
 ) -> Option<RepeatPositions> {
     let collection = tolerant_runs(sequence, chunk_length, id);
     if collection.is_empty() {
-        if verbose {
-            eprintln!(
+        if let Some(log) = log {
+            log(format!(
                 "[-]\t\tChromosome {id}: No consecutive repeats of length {chunk_length} were identified."
-            );
+            ));
         }
         None
     } else {
@@ -543,8 +584,8 @@ pub(crate) fn find_runs(
     if error_tolerant {
         tolerant_runs(sequence, chunk_length, id)
     } else {
-        let indexes = chunk_fasta(sequence.to_vec(), chunk_length, false, id.to_string());
-        calculate_indexes(indexes, chunk_length, false, id.to_string(), 0)
+        let indexes = chunk_fasta(sequence, chunk_length, None, id.to_string());
+        calculate_indexes(indexes, chunk_length, None, id.to_string(), 0)
             .map(|r| r.0)
             .unwrap_or_default()
     }
@@ -815,7 +856,7 @@ mod tests {
 
     fn split_by_dist(genome: &str) -> [Vec<u8>; 2] {
         let record = crate::fasta::Record::with_attrs("id1", None, genome.as_bytes());
-        split_seq_by_distance(record, DIST_FROM_CHROM_END, genome.len())
+        split_seq_by_distance(&record, DIST_FROM_CHROM_END, genome.len())
     }
 
     // GENOME/GENOME_2 are just two meta-repeats, so this should just be in half
@@ -835,7 +876,7 @@ mod tests {
 
     fn generate_chunks_left(genome: &str) -> Vec<ChunkedFasta> {
         let left = &split_by_dist(genome)[0];
-        chunk_fasta(left.clone(), CHUNK_LENGTH, false, "".into())
+        chunk_fasta(left, CHUNK_LENGTH, None, "".into())
     }
 
     #[test]
@@ -867,7 +908,7 @@ mod tests {
 
     fn generate_chunks_right() -> Vec<ChunkedFasta> {
         let left = &split_by_dist(GENOME)[1];
-        chunk_fasta(left.clone(), CHUNK_LENGTH, false, "".into())
+        chunk_fasta(left, CHUNK_LENGTH, None, "".into())
     }
 
     #[test]
@@ -904,7 +945,7 @@ mod tests {
 
     fn generate_indexes_left(genome: &str) -> RepeatPositions {
         let chunks = generate_chunks_left(genome);
-        calculate_indexes(chunks, CHUNK_LENGTH, false, "test".into(), 0).unwrap()
+        calculate_indexes(chunks, CHUNK_LENGTH, None, "test".into(), 0).unwrap()
     }
 
     #[test]
@@ -991,8 +1032,8 @@ mod tests {
     fn test_first_run_starts_at_first_index() {
         // junk before the first run must not be included in it
         let seq = format!("{}{}", "GATTC", "AACCT".repeat(4));
-        let chunks = chunk_fasta(seq.into_bytes(), CHUNK_LENGTH, false, "".into());
-        let positions = calculate_indexes(chunks, CHUNK_LENGTH, false, "test".into(), 0).unwrap();
+        let chunks = chunk_fasta(seq.as_bytes(), CHUNK_LENGTH, None, "".into());
+        let positions = calculate_indexes(chunks, CHUNK_LENGTH, None, "test".into(), 0).unwrap();
         assert_eq!(positions.0, vec![run("test", 5, 25, "AACCT")]);
     }
 
